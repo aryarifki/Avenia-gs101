@@ -1,0 +1,55 @@
+# 9002 — DroidSpaces (ravindu644/droidspaces-oss) support untuk Pixel 6 family (gs101/raviole)
+# Target tree: Reinazhard/guacamole_sickness, branch staging (6.1.177-rel6-86hm)
+# Perubahan: aktifkan namespace/IPC/devtmpfs + opsi NAT opsional yang hilang.
+# CATATAN ABI: CFS_BANDWIDTH & CGROUP_PIDS SENGAJA TIDAK diaktifkan (merusak ABI
+# modul vendor prebuilt; lihat dokumentasi DroidSpaces "Kernel configuration").
+#
+# Semua opsi yang ditambahkan aman-ABI sesuai dokumentasi resmi DroidSpaces
+# (GKI step-2 list), kecuali POSIX_MQUEUE/SYSVIPC/IPC_NS/PID_NS yang WAJIB
+# dipasangkan dengan patch kABI 9001.
+diff --git a/arch/arm64/configs/raviole_defconfig b/arch/arm64/configs/raviole_defconfig
+--- a/arch/arm64/configs/raviole_defconfig
++++ b/arch/arm64/configs/raviole_defconfig
+@@ -32,8 +32,12 @@ CONFIG_CGROUP_CPUACCT=y
+ CONFIG_CGROUP_CPUACCT=y
+ CONFIG_CGROUP_BPF=y
+ CONFIG_NAMESPACES=y
+-# CONFIG_UTS_NS is not set
+-# CONFIG_PID_NS is not set
++CONFIG_UTS_NS=y
++CONFIG_PID_NS=y
++CONFIG_IPC_NS=y
++CONFIG_SYSVIPC=y
++CONFIG_POSIX_MQUEUE=y
++CONFIG_USER_NS=y
+ CONFIG_SCHED_CASS=y
+ CONFIG_RT_SOFTIRQ_AWARE_SCHED=y
+ # CONFIG_RD_GZIP is not set
+@@ -843,12 +843,27 @@ CONFIG_MODEM_IF_QOS=m
+ CONFIG_MODEM_IF_QOS=m
+ CONFIG_CPIF_AP_SUSPEND_DURING_VOICE_CALL=y
+ CONFIG_LINK_DEVICE_PCIE_IOCC=y
+ CONFIG_LINK_DEVICE_PCIE_GPIO_WA=y
+ CONFIG_CP_WRESET_WA=y
+ CONFIG_CH_EXTENSION=m
+ CONFIG_CP_THERMAL=m
+ CONFIG_TOUCHSCREEN_TBN=m
+ CONFIG_TOUCHSCREEN_OFFLOAD=m
+ CONFIG_GOOG_TOUCH_INTERFACE=m
+ CONFIG_TOUCHSCREEN_FTS=m
+ CONFIG_TOUCHSCREEN_SEC_TS=m
++
++# --- DroidSpaces support (patch 9002) ---
++# Hardware access + NAT networking yang hilang di kernel sickness trim:
++CONFIG_DEVTMPFS=y
++CONFIG_NETFILTER_ADVANCED=y
++CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
++CONFIG_IP6_NF_NAT=y
++CONFIG_IP6_NF_TARGET_MASQUERADE=y
++CONFIG_NETFILTER_XT_TARGET_REJECT=y
++CONFIG_NETFILTER_XT_TARGET_LOG=y
++CONFIG_NETFILTER_XT_MATCH_RECENT=y
++CONFIG_TMPFS_XATTR=y
++CONFIG_TMPFS_POSIX_ACL=y
++# TIDAK diaktifkan (ABI vendor prebuilt modules, tanpa patch):
++# CONFIG_CFS_BANDWIDTH / CONFIG_CGROUP_PIDS

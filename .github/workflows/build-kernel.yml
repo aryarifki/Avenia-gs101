@@ -1,0 +1,96 @@
+name: build-gs101-droidspaces
+
+# Trigger:
+#  - Manual: tab Actions → Run workflow
+#  - Otomatis: setiap kali patches/** atau workflow ini berubah
+on:
+  workflow_dispatch:
+    inputs:
+      is_release:
+        description: "IS_RELEASE=1 → hardening clang (CFI/SCS/LTO) + zip ...-release"
+        required: false
+        default: "1"
+  push:
+    paths:
+      - "patches/**"
+      - ".github/workflows/build-kernel.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 86hm-gs101 (KernelSU + DroidSpaces)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout repo CI
+        uses: actions/checkout@v4
+
+      - name: Bebaskan disk runner
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /etc/mysql /etc/php \
+            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h /
+
+      - name: Dependencies host
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential cpio dwarves flex kmod \
+            libssl-dev libncurses-dev rsync wget zip
+
+      - name: Clone kernel (staging) + scripts (build.sh) + KernelSU (fork)
+        run: |
+          git clone --depth 1 -b staging https://github.com/Reinazhard/guacamole_sickness kernel
+          git clone --depth 1 https://github.com/Reinazhard/scripts scripts
+          git clone --depth 1 -b fork https://github.com/Reinazhard/KernelSU kernel/KernelSU
+
+      - name: Terapkan patch DroidSpaces
+        run: |
+          set -e
+          cd kernel
+          for p in ../patches/*.patch; do
+            echo ">>> applying $p"
+            patch -p1 --forward < "$p"
+          done
+
+      - name: Build (KSU=1, IS_RELEASE=1, CLANG_SOURCE=aosp)
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel"
+          set -o pipefail
+          CLANG_SOURCE=aosp IS_RELEASE=1 KSU=1 \
+            bash ../scripts/raviole/build.sh 2>&1 | tee ../build.log
+
+      - name: Quality gate — wajib configs DroidSpaces =y
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel"
+          failed=0
+          for k in UTS_NS PID_NS IPC_NS SYSVIPC POSIX_MQUEUE USER_NS DEVTMPFS \
+                   NETFILTER_ADVANCED NETFILTER_XT_MATCH_ADDRTYPE \
+                   IP6_NF_NAT IP6_NF_TARGET_MASQUERADE TMPFS_XATTR TMPFS_POSIX_ACL; do
+            grep -q "^CONFIG_${k}=y" out/.config || { echo "MISSING: CONFIG_${k}"; failed=1; }
+          done
+          if grep -qE '^CONFIG_(CFS_BANDWIDTH|CGROUP_PIDS)=y' out/.config; then
+            echo "ABI-VENDOR melanggar: CFS_BANDWIDTH/CGROUP_PIDS harus tetap off"; failed=1
+          fi
+          [ "$failed" = 1 ] && exit 1
+          echo "=== .config DroidSpaces ✓ ==="
+
+      - name: Upload flashable zip (AnyKernel3)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 86hm-gs101-ksu-release-droidspaces
+          path: kernel/AnyKernel3/*.zip
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload log GAGAL (debug)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-failed
+          path: build.log
+          retention-days: 3
