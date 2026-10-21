@@ -55,11 +55,11 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
 ## 4. Build "otomatis" level berikutnya (opsional)
 
 - **Build tiap kali patch berubah**: sudah aktif (trigger `push` pada `patches/**`).
-- **Build terjadwal mengikuti upstream**: tambahkan di bagian `on:` workflow:
-  ```yaml
-  schedule:
-    - cron: "0 3 * * 1"   # Senin 03:00 UTC
-  ```
+- **Build terjadwal mengikuti upstream**: SUDAH AKTIF — cron `0 3 * * 1`
+  (Senin 03:00 UTC / ±10:00 WIB), selalu memakai HEAD upstream saat clone
+  (kernel staging, KernelSU fork, AnyKernel3, toolchain AOSP). Note: edit file
+  workflow sendiri sengaja tidak lagi men-trigger build otomatis (perubahan
+  patch saja yang men-trigger).
 - **Release otomatis**: tambahkan step `softprops/action-gh-release` dengan
   `files: kernel/AnyKernel3/*.zip` + tag `refs/tags/v*`.
 

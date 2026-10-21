@@ -10,10 +10,13 @@ on:
         description: "IS_RELEASE=1 → hardening clang (CFI/SCS/LTO) + zip ...-release"
         required: false
         default: "1"
+  schedule:
+    # Rebuild mingguan otomatis — selalu HEAD upstream saat clone:
+    # kernel staging, KernelSU fork, AnyKernel3, toolchain AOSP.
+    - cron: "0 3 * * 1"   # Senin 03:00 UTC (±10:00 WIB)
   push:
     paths:
-      - "patches/**"
-      - ".github/workflows/build-kernel.yml"
+      - "patches/**"        # edit workflow sengaja TIDAK men-trigger build
 
 permissions:
   contents: read
