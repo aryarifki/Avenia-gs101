@@ -1,4 +1,4 @@
-name: build-gs101-droidspaces
+name: build-avenia-gs101-droidspaces
 
 # Trigger:
 #  - Manual: tab Actions → Run workflow
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    name: 86hm-gs101 (KernelSU + DroidSpaces)
+    name: avenia-gs101 (KernelSU fork + DroidSpaces)
     runs-on: ubuntu-24.04
     timeout-minutes: 300
 
@@ -60,11 +60,17 @@ jobs:
             patch -p1 --forward < "$p"
           done
 
-      - name: Build (KSU=1, IS_RELEASE=1, CLANG_SOURCE=aosp)
+      - name: Pre-clone AnyKernel3 + brand Avenia (kernel.string)
+        run: |
+          git clone --depth 1 https://github.com/Reinazhard/AnyKernel3 kernel/AnyKernel3
+          sed -i 's|^kernel.string=.*|kernel.string=Avenia Kernel by aryarifki|' kernel/AnyKernel3/anykernel.sh
+          grep -n kernel.string kernel/AnyKernel3/anykernel.sh
+
+      - name: Build (ZIPNAME=Avenia, KSU=1, IS_RELEASE=1, CLANG_SOURCE=aosp)
         run: |
           cd "$GITHUB_WORKSPACE/kernel"
           set -o pipefail
-          CLANG_SOURCE=aosp IS_RELEASE=1 KSU=1 \
+          CLANG_SOURCE=aosp IS_RELEASE=1 KSU=1 ZIPNAME=Avenia \
             bash ../scripts/raviole/build.sh 2>&1 | tee ../build.log
 
       - name: Quality gate — wajib configs DroidSpaces =y
@@ -85,7 +91,7 @@ jobs:
       - name: Upload flashable zip (AnyKernel3)
         uses: actions/upload-artifact@v4
         with:
-          name: 86hm-gs101-ksu-release-droidspaces
+          name: avenia-gs101-ksu-release-droidspaces
           path: kernel/AnyKernel3/*.zip
           retention-days: 14
           if-no-files-found: error
