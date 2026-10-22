@@ -1,0 +1,16 @@
+# 9005 - Avenia deep branding: banner dmesg saat boot (kernelsu_init).
+# String log saja - semantik driver & manager-matching tidak berubah.
+# Kredit upstream utuh (KernelSU fork Reinazhard, KSU_VERSION & package name tetap).
+diff --git a/KernelSU/kernel/core/init.c b/KernelSU/kernel/core/init.c
+index 998fbf7..afa3e53 100644
+--- a/KernelSU/kernel/core/init.c
++++ b/KernelSU/kernel/core/init.c
+@@ -78,7 +78,7 @@ module_param_named(norc, ksu_no_custom_rc, bool, 0);
+ 
+ int __init kernelsu_init(void)
+ {
+-    pr_info("welcome to KernelSU version " __stringify(KERNEL_SU_VERSION) ", package name " KSU_PACKAGE_NAME "\n");
++    pr_info("Avenia Kernel by aryarifki || welcome to KernelSU version " __stringify(KERNEL_SU_VERSION) ", package name " KSU_PACKAGE_NAME "\n");
+ #ifdef CONFIG_KSU_DEBUG
+     pr_alert("*************************************************************");
+     pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
