@@ -19,7 +19,7 @@ on:
       - "patches/**"        # edit workflow sengaja TIDAK men-trigger build
 
 permissions:
-  contents: read
+  contents: write   # dibutuhkan untuk membuat tag & release otomatis
 
 jobs:
   build:
@@ -95,6 +95,42 @@ jobs:
           path: kernel/AnyKernel3/*.zip
           retention-days: 14
           if-no-files-found: error
+
+      - name: Susun checksum + catatan rilis
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          sha256sum kernel/AnyKernel3/*.zip > checksums.txt
+          {
+            echo "**Avenia Kernel by aryarifki** — gs101 (Pixel 6 / 6 Pro / 6a)"
+            echo ""
+            echo "| Komponen | HEAD upstream saat build |"
+            echo "|---|---|"
+            echo "| Kernel staging (Reinazhard/guacamole_sickness) | \`$(git -C kernel log -1 --format='%h %cs')\` |"
+            echo "| KernelSU fork (Reinazhard) | \`$(git -C kernel/KernelSU log -1 --format='%h %s')\` |"
+            SUSFSV=$(grep -m1 'define SUSFS_VERSION' kernel/include/linux/susfs.h | awk '{print $3}' | tr -d '"')
+            echo "| SUSFS | \`${SUSFSV}\` |"
+            echo "| Dibangun dari | \`${{ github.sha }}\` (run #${{ github.run_number }}) |"
+            echo ""
+            echo "**Flash:** \`.zip\` via Recovery/TWRP — device-check oriole/raven/bluejay aktif."
+            echo "Pasca-boot: \`dmesg | grep Avenia\` harus menampilkan banner."
+            echo ""
+            echo "### SHA256"
+            echo '```'
+            cat checksums.txt
+            echo '```'
+            echo ""
+            echo "Kredit: Reinazhard (kernel staging, fork KernelSU, scripts/AnyKernel3) · simonpunk (SUSFS) · tiann (KernelSU) · osm0sis dkk (AnyKernel3) · AOSP (clang) — detail: DOKUMENTASI.md"
+          } > release-notes.md
+      - name: Rilis otomatis → halaman Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: avenia-gs101-r${{ github.run_number }}
+          name: Avenia gs101 r${{ github.run_number }}
+          body_path: release-notes.md
+          files: |
+            kernel/AnyKernel3/*.zip
+            checksums.txt
+          fail_on_unmatched_files: true
 
       - name: Upload log GAGAL (debug)
         if: failure()

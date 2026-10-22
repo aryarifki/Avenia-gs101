@@ -71,8 +71,9 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
   (kernel staging, KernelSU fork, AnyKernel3, toolchain AOSP). Note: edit file
   workflow sendiri sengaja tidak lagi men-trigger build otomatis (perubahan
   patch saja yang men-trigger).
-- **Release otomatis**: tambahkan step `softprops/action-gh-release` dengan
-  `files: kernel/AnyKernel3/*.zip` + tag `refs/tags/v*`.
+- **Release otomatis**: SUDAH AKTIF — setiap build sukses membuat tag `avenia-gs101-r<N>` +
+  zip & `checksums.txt` di halaman Releases (softprops/action-gh-release). Panduan lengkap:
+  lihat **DOKUMENTASI.md**.
 
 ## 5. Kalau tetap ingin build dari terminal ini (proot Android)
 
