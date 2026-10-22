@@ -1,0 +1,567 @@
+# 9005 - Avenia Kernel: port SUSFS v2.3.0 (staging guacamole_sickness) ke fork
+# backslashxx/KernelSU (master). Isi: file compat unity feature/ksu_susfs_compat.c
+# (static keys + shim handler + helper domain), rename bool sucompat, penggantian
+# body stat/faccessat (struct filename**), body ksu_handle_sys_reboot sesuai
+# konvensi tree (ret != 0 -> reboot asli) + passthrough CMD_SUSFS_* (magic2
+# 0xFAFAFAFA, uid 0), init susfs, monitor sdcard, blok Kconfig KSU_SUSFS (y).
+# Kredit: susfs4ksu (simonpunk), fork backslashxx (SukiSU), fork Reinazhard (86hm).
+diff --git a/KernelSU/kernel/Kconfig b/KernelSU/kernel/Kconfig
+index c69bc26..1ee4eb5 100644
+--- a/KernelSU/kernel/Kconfig
++++ b/KernelSU/kernel/Kconfig
+@@ -144,3 +144,135 @@ config KSU_HEURISTIC_IN_TREE_BUILD
+ 	  Note: if youre building out-of-tree, configure by editing ksu.c #defines instead.
+ 
+ endmenu
++
++# Avenia: blok SUSFS dari fork Reinazhard/KernelSU (staging guacamole_sickness).
++# Semua default y sesuai sumber; call-site staging memakai CONFIG_KSU_SUSFS*.
++menu "KernelSU"
++
++config KSU
++	tristate "KernelSU function support"
++	default n
++	help
++	  Enable kernel-level root privileges on Android System.
++	  Requires CONFIG_KPROBES for kernel hooking support.
++	  Requires CONFIG_EXT4_FS for `ext4_unregister_sysfs`.
++	  To compile as a module, choose M here: the
++	  module will be called kernelsu.
++
++config KSU_DEBUG
++	bool "KernelSU debug mode"
++	depends on KSU
++	default n
++	help
++	  Enable KernelSU debug mode.
++
++config KSU_DISABLE_MANAGER
++	bool "Disable KernelSU manager integration"
++	depends on KSU
++	default n
++	help
++	  Disable manager APK detection and manager-specific handling.
++	  Root will be used in place of manager-only functionality.
++
++config KSU_DISABLE_POLICY
++	bool "Disable KernelSU policy profiles"
++	depends on KSU
++	default n
++	help
++	  Disable per-app root/non-root profile customization.
++	  Escalation will always use the default full root profile, and
++	  non-root handling will follow the global umount policy only.
++
++menu "KernelSU - SUSFS"
++config KSU_SUSFS
++	bool "KernelSU addon - SUSFS"
++	depends on KSU
++	depends on THREAD_INFO_IN_TASK
++	default y
++	help
++	  Patch and Enable SUSFS to kernel with KernelSU.
++
++config KSU_SUSFS_SUS_PATH
++	bool "Enable to hide suspicious path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding the user-defined path and all its sub-paths from various system calls.
++	  - Use "add_sus_path_loop" instead of "add_sus_path" if the user-defined path is frequently modified.
++	  - Use with cautious as it may cause performance loss and will be vulnerable to side channel attacks,
++	  	just disable this feature if it doesn't work for you or you don't need it at all.
++	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED.
++
++config KSU_SUSFS_SUS_MOUNT
++	bool "Enable to hide suspicious mounts"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Automatically assign fake mnt_id and fake mnt_group_id for mounts mounted by ksu process until
++	    /sdcard is  decrypted, this is to evade from mnt_id/mnt_group_id gap detections.
++	  - Allow hiding all sus mounts from /proc/self/[mounts|mountinfo|mountstat] for non-su processes.
++	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED.
++
++config KSU_SUSFS_SUS_KSTAT
++	bool "Enable to spoof suspicious kstat"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow spoofing the kstat of user-defined file/directory.
++	  - Effective on all processes with (uid % 100000) >= 10000.
++
++config KSU_SUSFS_SPOOF_UNAME
++	bool "Enable to spoof uname"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow spoofing the string returned by uname syscall to user-defined string.
++	  - Effective on all processes.
++
++config KSU_SUSFS_ENABLE_LOG
++	bool "Enable logging susfs log to kernel"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow logging susfs log to kernel, uncheck it to completely disable all susfs log.
++
++config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
++	bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Automatically hide ksu and susfs symbols from '/proc/kallsyms'.
++	  - Effective on all processes.
++
++config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	bool "Enable to spoof /proc/bootconfig (gki) or /proc/cmdline (non-gki)"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Spoof the output of /proc/bootconfig (gki) or /proc/cmdline (non-gki) with a user-defined file.
++	  - Effective on all processes.
++
++config KSU_SUSFS_OPEN_REDIRECT
++	bool "Enable to redirect a path to be opened with another path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow redirecting a target path to be opened with another user-defined path.
++	  - Both target path and redirected path must be existed before they can be added to the kernel.
++	  - Users have to take care of the selinux permission of both target path and redirected path by themselves.
++	  - OPEN_REDIRECT does not bypass some detections by default, but users can work with SUS_KSTAT to bypass them.
++	  - Effective only on processes with pre-defined uid scheme.
++
++config KSU_SUSFS_SUS_MAP
++	bool "Enable to hide some mmapped real file from different proc maps interfaces"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding mmapped real file from /proc/<pid>/[maps|smaps|smaps_rollup|map_files|mem|pagemap]
++	  - It does NOT support hiding for anon memory.
++	  - It does NOT hide any inline hooks or plt hooks cause by the injected library itself.
++	  - It may not be able to evade detections by apps that implement a good injection detection.
++	  - Effective only on zygote/zygote_next spawned user app process that is marked with TIF_PROC_UMOUNTED
++	    and with (uid % 100000) >= 10000.
++
++endmenu
+diff --git a/KernelSU/kernel/feature/ksu_susfs_compat.c b/KernelSU/kernel/feature/ksu_susfs_compat.c
+new file mode 100644
+index 0000000..dac1fd4
+--- /dev/null
++++ b/KernelSU/kernel/feature/ksu_susfs_compat.c
+@@ -0,0 +1,141 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * Avenia Kernel - SUSFS compat bridge untuk fork backslashxx/KernelSU (master).
++ *
++ * Port minimal dari integrasi SUSFS fork Reinazhard/KernelSU (staging tree
++ * guacamole_sickness + susfs4ksu v2.3.0). Fork backslashxx tidak menyediakan
++ * simbol yang dibinding call-site staging, file ini melengkapi:
++ *
++ *  - static keys : ksu_su_compat_enabled, ksu_is_init_rc_hook_enabled,
++ *                  ksu_is_input_hook_enabled
++ *  - shim handler: ksu_handle_execveat_sucompat,
++ *                  ksu_handle_post_execveat_sucompat, ksu_handle_setresuid,
++ *                  ksu_handle_sys_read, ksu_handle_vfs_fstat,
++ *                  ksu_handle_input_handle_event
++ *  - helper      : susfs_is_current_ksu_domain(),
++ *                  susfs_is_current_droidspaces_domain() (dipakai patch 9003
++ *                  pada fs/namespace.c)
++ *
++ * File ini disuntik ke AKHIR rantai unity build (ksu.c), sehingga helper
++ * static fork asli (is_init_rc, load_module_rc_once, ksu_install_rc_hook,
++ * module_rc_len, ksu_rc_len, ksu_handle_execveat, ksu_install_su_fd)
++ * dapat dipanggil langsung tanpa mengubah visibilitas fork asli.
++ *
++ * Credits: susfs4ksu (simonpunk), fork backslashxx (SukiSU), fork Reinazhard (86hm).
++ */
++#include <linux/susfs.h>
++
++/* ---- static keys yang dibinding call-site staging ------------------ */
++/* sucompat: selalu ON untuk jalur tree; toggle internal fork (bool
++ * ksu_sucompat_is_enabled, hasil rename patch ini) tetap mengatur
++ * mekanisme miliknya sendiri. */
++DEFINE_STATIC_KEY_TRUE(ksu_su_compat_enabled);
++/* init.rc read hook (sys_read + vfs_fstat). */
++DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);
++/* stub input: stub yang dipakai fork sendiri; jalur staging dorman. */
++DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);
++
++/* ---- fs/exec.c: delegasi penuh ke handler execveat fork ------------ */
++int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
++				 void *argv, void *envp, int *flags)
++{
++	return ksu_handle_execveat(fd, filename_ptr, argv, envp, flags);
++}
++
++/* pasca-exec sukses: pasang su fd ke proses (paritas Reinazhard). */
++int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr,
++				      void *argv, void *envp, int *flags, int *retval)
++{
++	if (*retval >= 0)
++		(void)ksu_install_su_fd();
++	return 0;
++}
++
++/* ---- kernel/sys.c __sys_setresuid: stub ----------------------------- */
++/* Perekaman cred asli berjalan via LSM hook ksu_handle_setresuid_cred. */
++int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
++{
++	return 0;
++}
++
++/* ---- fs/read_write.c: sys_read (port Reinazhard) --------------------- */
++void ksu_handle_sys_read(unsigned int fd)
++{
++	struct file *file = fget(fd);
++
++	if (!file)
++		return;
++
++	ksu_install_rc_hook(file);
++	fput(file);
++}
++
++/* ---- fs/stat.c: vfs_fstat - spoof size init.rc----------------------- */
++void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)
++{
++	loff_t orig_size = *kstat_size_ptr;
++	size_t extra = 0;
++	bool is_rc = false;
++	struct file *file = fget(fd);
++
++	if (file) {
++		if (is_init_rc(file)) {
++			pr_info("stat init.rc\n");
++			is_rc = true;
++			load_module_rc_once();
++		}
++		fput(file);
++	}
++
++	if (is_rc) {
++		extra = ksu_rc_len + module_rc_len;
++		*kstat_size_ptr = orig_size + extra;
++		pr_info("adding rc len: %lld -> %lld (static=%zu module=%zu)\n",
++			(long long)orig_size, (long long)*kstat_size_ptr,
++			ksu_rc_len, module_rc_len);
++	}
++}
++
++/* ---- drivers/input/input.c: stub ------------------------------------- */
++int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value)
++{
++	return 0;
++}
++
++/* ---- fs/susfs.c: helper domain ---------------------------------------- */
++bool susfs_is_current_ksu_domain(void)
++{
++	return is_ksu_domain();
++}
++
++/* ---- fs/namespace.c (patch 9003): droidspacesd lihat mount asli ------- */
++static u32 susfs_droidspacesd_sid __read_mostly;
++static bool susfs_droidspacesd_sid_ready __read_mostly;
++
++static void susfs_init_droidspacesd_sid(void)
++{
++	const char *dom = "u:r:droidspacesd:s0";
++	u32 secid = 0;
++
++	if (!security_secctx_to_secid(dom, strlen(dom), &secid) && secid != 0) {
++		susfs_droidspacesd_sid = secid;
++		susfs_droidspacesd_sid_ready = true;
++	}
++}
++
++static u32 susfs_current_sid(void)
++{
++	u32 secid = 0;
++
++	security_current_getsecid_subj(&secid);
++	return secid;
++}
++
++bool susfs_is_current_droidspaces_domain(void)
++{
++	if (unlikely(!susfs_droidspacesd_sid_ready))
++		susfs_init_droidspacesd_sid();
++
++	return susfs_droidspacesd_sid_ready &&
++	       susfs_current_sid() == susfs_droidspacesd_sid;
++}
+diff --git a/KernelSU/kernel/feature/sucompat.c b/KernelSU/kernel/feature/sucompat.c
+index 4efbf91..374e039 100644
+--- a/KernelSU/kernel/feature/sucompat.c
++++ b/KernelSU/kernel/feature/sucompat.c
+@@ -7,7 +7,7 @@
+ #define SU_PATH "/system/bin/su"
+ #define SH_PATH "/system/bin/sh"
+ 
+-static bool ksu_su_compat_enabled __read_mostly = true;
++static bool ksu_sucompat_is_enabled __read_mostly = true;
+ 
+ static char __user *sh_user_path(void)
+ {
+@@ -59,7 +59,7 @@ static __always_inline bool is_su_allowed(const void **ptr_to_check)
+ 	if (!!!static_branch_likely(&ksu_sucompat_key))
+ 		return false;
+ #else
+-	if (!ksu_su_compat_enabled)
++	if (!ksu_sucompat_is_enabled)
+ 		return false;
+ #endif // KSU_CAN_USE_JUMP_LABEL
+ #endif
+@@ -222,22 +222,44 @@ no_escalate:
+ }
+ 
+ // sys_faccessat
+-SUCOMPAT_HOOK_TYPE ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)
++int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode,
++			 int *__unused_flags)
+ {
+-	if (!is_su_allowed((const void **)filename_user))
++	/* Avenia: port dari fork Reinazhard - versi struct filename** yang cocok
++	 * dengan call-site staging (fs/open.c): redirect su -> sh. */
++	if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL))
++		return 0;
++
++	if (likely(memcmp((*filename)->name, su_path, sizeof(su_path))))
+ 		return 0;
+ 
+-	ksu_sucompat_user_common(filename_user, "sys_faccessat");
++	if (current_chrooted()) {
++		pr_err("ksu_handle_faccessat: su found but NOT allowed! current is chrooted\n");
++		return 0;
++	}
++
++	pr_info("ksu_handle_faccessat: su->sh!\n");
++	memcpy((void *)((*filename)->name), sh_path, sizeof(sh_path));
+ 	return 0;
+ }
+ 
+ // sys_newfstatat, sys_fstat64
+-SUCOMPAT_HOOK_TYPE ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
++int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
+ {
+-	if (!is_su_allowed((const void **)filename_user))
++	/* Avenia: port sama seperti faccessat (call-site fs/stat.c staging). */
++	if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL))
++		return 0;
++
++	if (likely(memcmp((*filename)->name, su_path, sizeof(su_path))))
+ 		return 0;
+ 
+-	ksu_sucompat_user_common(filename_user, "sys_newfstatat");
++	if (current_chrooted()) {
++		pr_err("ksu_handle_stat: su found but NOT allowed! current is chrooted\n");
++		return 0;
++	}
++
++	pr_info("ksu_handle_stat: su->sh!\n");
++	memcpy((void *)((*filename)->name), sh_path, sizeof(sh_path));
+ 	return 0;
+ }
+ 
+@@ -365,7 +387,7 @@ static void ksu_sucompat_enable()
+ 	ksu_sucompat_enable_branch();
+ 	syscall_table_sucompat_enable();
+ 
+-	ksu_su_compat_enabled = true;
++	ksu_sucompat_is_enabled = true;
+ 	pr_info("%s: hooks enabled: exec, faccessat, stat\n", __func__);
+ }
+ 
+@@ -375,13 +397,13 @@ static void ksu_sucompat_disable()
+ 	ksu_sucompat_disable_branch();
+ 	syscall_table_sucompat_disable();
+ 
+-	ksu_su_compat_enabled = false;
++	ksu_sucompat_is_enabled = false;
+ 	pr_info("%s: hooks disabled: exec, faccessat, stat\n", __func__);
+ }
+ 
+ static int su_compat_feature_get(u64 *value)
+ {
+-	*value = ksu_su_compat_enabled ? 1 : 0;
++	*value = ksu_sucompat_is_enabled ? 1 : 0;
+ 	return 0;
+ }
+ 
+@@ -389,7 +411,7 @@ static int su_compat_feature_set(u64 value)
+ {
+ 	bool enable = value != 0;
+ 
+-	if (enable == ksu_su_compat_enabled) {
++	if (enable == ksu_sucompat_is_enabled) {
+ 		pr_info("su_compat: no need to change\n");
+ 	return 0;
+ 	}
+@@ -400,7 +422,7 @@ static int su_compat_feature_set(u64 value)
+ 		ksu_sucompat_disable();
+ 	}
+ 
+-	ksu_su_compat_enabled = enable;
++	ksu_sucompat_is_enabled = enable;
+ 	pr_info("su_compat: set to %d\n", enable);
+ 
+ 	return 0;
+diff --git a/KernelSU/kernel/ksu.c b/KernelSU/kernel/ksu.c
+index 40db187..caf5a72 100644
+--- a/KernelSU/kernel/ksu.c
++++ b/KernelSU/kernel/ksu.c
+@@ -175,6 +175,7 @@
+ 
+ #if defined(CONFIG_KSU_KPROBES_KSUD) && !defined(CONFIG_KSU_TAMPER_SYSCALL_TABLE) && !defined(CONFIG_KSU_HACK_ARM64_BRANCH_LINK)
+ #include "hook/kp_ksud.c"
++#include "feature/ksu_susfs_compat.c"
+ #endif
+ 
+ // track backports and other quirks here
+@@ -260,6 +261,12 @@ static int __init kernelsu_init(void)
+ 		return -ENOSYS;
+ 	}
+ 
++#ifdef CONFIG_KSU_SUSFS
++	/* Avenia: init state susfs tree di awal (paritas fork Reinazhard). */
++	extern void susfs_init(void);
++	susfs_init();
++#endif
++
+ #ifdef KSU_CAN_USE_MODULE_BLACKLIST
+ 	ksu_module_blacklist_init(); // Block modules early, before vendor modules are loaded in second stage.
+ #endif
+diff --git a/KernelSU/kernel/supercall/dispatch.c b/KernelSU/kernel/supercall/dispatch.c
+index 317d216..f067c9b 100644
+--- a/KernelSU/kernel/supercall/dispatch.c
++++ b/KernelSU/kernel/supercall/dispatch.c
+@@ -93,6 +93,10 @@ static int do_report_event(void __user *arg)
+ 			boot_complete_lock = true;
+ 			pr_info("boot_complete triggered\n");
+ 			on_boot_completed();
++#ifdef CONFIG_KSU_SUSFS
++			/* Avenia: monitor sdcard susfs (paritas fork Reinazhard). */
++			susfs_start_sdcard_monitor_fn();
++#endif
+ 		}
+ 		break;
+ 	}
+diff --git a/KernelSU/kernel/supercall/supercall.c b/KernelSU/kernel/supercall/supercall.c
+index 59ec582..8475dbe 100644
+--- a/KernelSU/kernel/supercall/supercall.c
++++ b/KernelSU/kernel/supercall/supercall.c
+@@ -77,20 +77,25 @@ bool ksu_is_su_session_fd(const struct file *filp)
+ 	return context && (context->permissions & KSU_DRIVER_PERMISSION_SU_SESSION);
+ }
+ 
+-// downstream: make sure to pass arg as reference, this can allow us to extend things.
++// downstream: make sure to pass arg as reference
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs.h>
++#endif
+ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg)
+ {
++	/*
++	 * Avenia port: konvensi call-site staging (kernel/reboot.c):
++	 *   ret != 0 -> lanjut ke reboot asli (orig_flow);
++	 *   ret == 0 -> ditelan (KSU/susfs yang handle).
++	 * Body asli fork mengembalikan 0 untuk non-magic sehingga akan
++	 * menelan reboot nyata - diubah sesuai konvensi staging.
++	 */
+ 	if (magic1 != KSU_INSTALL_MAGIC1)
+-		return 0;
++		return -EINVAL;
+ 
+-	// when ternary on fmt?
+-	// cold syscall, we can splurge xD
+ 	if (magic2 == KSU_INSTALL_MAGIC2)
+ 		pr_info("sys_reboot: magic: 0x%x id: 0x%x pid: %d comm: %s \n", magic1, magic2, current->pid, current->comm);
+-	else
+-		pr_info("sys_reboot: magic: 0x%x id: %d pid: %d pid: %s \n", magic1, magic2, current->pid, current->comm);
+ 
+-	// arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
+ 	// downstream: dereference arg as arg4 so we can be inline to upstream
+ 	void __user *arg4 = (void __user *)*arg;
+ 
+@@ -106,6 +111,78 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
+ 		return 0;
+ 	}
+ 
++#ifdef CONFIG_KSU_SUSFS
++	/* Avenia: passthrough supercall susfs (magic2=fafafafa, uid 0),
++	 * meniru switch fork Reinazhard (susfs4ksu userspace compatible). */
++	if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
++		switch (cmd) {
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++		case CMD_SUSFS_ADD_SUS_PATH:
++			susfs_add_sus_path(arg);
++			return 0;
++		case CMD_SUSFS_ADD_SUS_PATH_LOOP:
++			susfs_add_sus_path_loop(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++		case CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS:
++			susfs_set_hide_sus_mnts_for_non_su_procs(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++		case CMD_SUSFS_ADD_SUS_KSTAT:
++			susfs_add_sus_kstat(arg);
++			return 0;
++		case CMD_SUSFS_UPDATE_SUS_KSTAT:
++			susfs_update_sus_kstat(arg);
++			return 0;
++		case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
++			susfs_add_sus_kstat(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++		case CMD_SUSFS_SET_UNAME:
++			susfs_set_uname(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
++		case CMD_SUSFS_ENABLE_LOG:
++			susfs_enable_log(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++		case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
++			susfs_set_cmdline_or_bootconfig(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++		case CMD_SUSFS_ADD_OPEN_REDIRECT:
++			susfs_add_open_redirect(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++		case CMD_SUSFS_ADD_SUS_MAP:
++			susfs_add_sus_map(arg);
++			return 0;
++#endif
++		case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
++			susfs_set_avc_log_spoofing(arg);
++			return 0;
++		case CMD_SUSFS_SHOW_ENABLED_FEATURES:
++			susfs_get_enabled_features(arg);
++			return 0;
++		case CMD_SUSFS_SHOW_VARIANT:
++			susfs_show_variant(arg);
++			return 0;
++		case CMD_SUSFS_SHOW_VERSION:
++			susfs_show_version(arg);
++			return 0;
++		default:
++			return -EINVAL;
++		}
++	}
++#endif
++
+ 	toolkit_handle_sys_reboot(magic1, magic2, cmd, arg);
+ 	return 0;
+ }
+
