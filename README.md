@@ -2,7 +2,7 @@
   <img src="assets/Hamsa.svg" alt="Avenia Kernel Banner" width="100%" />
 </p>
 
-<h1 align="center">Avenia Kernel (gs101)</h1>
+<h1 align="center">Avenia Kernel</h1>
 
 <p align="center">
   <b>High-Performance, Stealth-Rooted, Container-Ready Android Kernel for Google Pixel 6 Series (GS101)</b>
