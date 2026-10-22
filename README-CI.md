@@ -24,6 +24,7 @@ github-ci/
 │   ├── 9002-DroidSpaces-raviole_defconfig.patch           (config namespace+IPC)
 │   ├── 9003-exempt-droidspacesd-susfs.patch               (opsional: toggle susfs)
 │   ├── 9004-avenia-rebrand.patch                          (rebrand: LOCALVERSION "-Avenia")
+│   ├── 9005-avenia-ksu-brand.patch                        (branding dalam: banner dmesg boot Avenia)
 └── README-CI.md                          ← file ini
 ```
 
@@ -55,8 +56,9 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
 | Bebaskan disk | hapus SDK Android/.NET/CodeQL preinstalled runner (~+25 GB) |
 | Deps host | `bc bison flex cpio dwarves(pahole) libssl-dev kmod rsync zip` |
 | Clone | kernel `staging` + `scripts` (build.sh) + KernelSU `fork` → `kernel/KernelSU` (posisi ini dihormati build.sh, tidak di-clone ulang) |
-| Patch | `patch -p1` untuk keempat patch, berurutan |
+| Patch | `patch -p1` untuk kelima patch, berurutan |
 | Brand Avenia | pre-clone AnyKernel3 (`Reinazhard/AnyKernel3`) → build.sh menghormati AK3 yang sudah ada; sed `kernel.string=Avenia Kernel by aryarifki` |
+| Banner dmesg | patch 9005: saat init kernel, dmesg/logcat menampilkan `Avenia Kernel by aryarifki \|\| welcome to KernelSU version …` — string log saja, tidak menyentuh `KSU_VERSION`/`KSU_PACKAGE_NAME` (aman untuk deteksi manager) |
 | Build | `CLANG_SOURCE=aosp` (prebuilt, jauh lebih cepat daripada klon LLVM kernel.org), `ZIPNAME=Avenia KSU=1 IS_RELEASE=1` → zip final jatuh di `kernel/AnyKernel3/*.zip` |
 | Quality gate | assert semua config DroidSpaces `=y` di `out/.config` dan `CFS_BANDWIDTH`/`CGROUP_PIDS` tetap off — build dianggap gagal bila lolos |
 | Artifact | zip AnyKernel3 (retensi 14 hari) + log gagal (3 hari) |
