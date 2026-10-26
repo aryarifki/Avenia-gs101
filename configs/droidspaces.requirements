@@ -8,6 +8,10 @@
 # CATATAN ABI: CONFIG_CFS_BANDWIDTH dan CONFIG_CGROUP_PIDS sengaja TIDAK ada
 # di sini. Keduanya mengubah ukuran struktur scheduler/cgroup dan menggeser
 # CRC ribuan simbol vendor → modul stok Pixel 6 menolak load (bootloop).
+#
+# CATATAN NAMA: dokumen upstream memakai nama lama (mendukung 3.10+).
+# CONFIG_NETFILTER_XT_TARGET_REJECT tidak ada di 6.1 → dipetakan otomatis ke
+# CONFIG_IP_NF_TARGET_REJECT + CONFIG_IP6_NF_TARGET_REJECT (lihat RENAMED).
 
 CONFIG_SYSVIPC=y
 CONFIG_POSIX_MQUEUE=y
@@ -19,7 +23,8 @@ CONFIG_USER_NS=y
 CONFIG_IP6_NF_NAT=y
 CONFIG_IP6_NF_TARGET_MASQUERADE=y
 CONFIG_MACVLAN=y
-CONFIG_NETFILTER_XT_TARGET_REJECT=y
+CONFIG_IP_NF_TARGET_REJECT=y
+CONFIG_IP6_NF_TARGET_REJECT=y
 CONFIG_NETFILTER_XT_TARGET_LOG=y
 CONFIG_NETFILTER_XT_MATCH_RECENT=y
 CONFIG_IP_SET=y

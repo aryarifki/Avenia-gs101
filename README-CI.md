@@ -25,7 +25,7 @@ github-ci/
 │       ├── release_notes.py               ← generator changelog + deteksi rilis duplikat
 │       └── droidspaces_sync.py            ← ekstraktor requirement GKI + hash patch kABI
 ├── configs/
-│   ├── droidspaces.requirements           ← 19 simbol GKI (auto-generated)
+│   ├── droidspaces.requirements           ← 20 simbol GKI (auto-generated)
 │   └── droidspaces.source                 ← pin SHA upstream + hash dokumen & patch kABI
 ├── patches/
 │   ├── 9001-GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch   (kABI slot 6–8)
@@ -73,7 +73,7 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
 | Deps host | `bc bison flex cpio dwarves(pahole) libssl-dev kmod rsync zip` |
 | Clone | kernel `staging` + `scripts` (build.sh) + KernelSU `fork` → `kernel/KernelSU` (posisi ini dihormati build.sh, tidak di-clone ulang). Bisa **di-pin** per-run lewat input `kernel_ref`/`ksu_ref`/`scripts_ref`/`ak3_ref` |
 | Patch | `patch -p1` untuk kelima patch, berurutan |
-| Requirement DroidSpaces | `configs/droidspaces.requirements` (digenerate dari dokumen resmi DroidSpaces, 19 simbol) di-merge ke `raviole_defconfig`; simbol terlarang (`CFS_BANDWIDTH`/`CGROUP_PIDS`) ditolak keras |
+| Requirement DroidSpaces | `configs/droidspaces.requirements` (digenerate dari dokumen resmi DroidSpaces, 20 simbol) di-merge ke `raviole_defconfig`; simbol terlarang (`CFS_BANDWIDTH`/`CGROUP_PIDS`) ditolak keras |
 | Brand + guard AK3 | sed `kernel.string=Avenia Kernel by aryarifki`, lalu assert: `device.name*=oriole/raven/bluejay`, `do.devicecheck=1`, `do.modules=0`, `flash_generic dtbo` — build gagal bila upstream AK3 mengubah salah satunya |
 | Banner dmesg | patch 9005: saat init kernel, dmesg/logcat menampilkan `Avenia Kernel by aryarifki \|\| welcome to KernelSU version …` — string log saja, tidak menyentuh `KSU_VERSION`/`KSU_PACKAGE_NAME` (aman untuk deteksi manager) |
 | Build | `CLANG_SOURCE=aosp` (prebuilt, jauh lebih cepat daripada klon LLVM kernel.org), `ZIPNAME=Avenia KSU=1 IS_RELEASE=1` → zip final jatuh di `kernel/AnyKernel3/*.zip` |

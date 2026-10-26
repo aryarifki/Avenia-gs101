@@ -64,7 +64,7 @@ aryarifki/Avenia-gs101  (±100 KB — resep)
  ├── .github/workflows/build-kernel.yml     ← build + quality gate + rilis + changelog
  ├── .github/workflows/sync-droidspaces.yml ← sinkron requirement kernel DroidSpaces
  ├── .github/scripts/                       ← generator changelog & sync DroidSpaces
- ├── configs/droidspaces.requirements       ← 19 simbol GKI (auto-generated, jangan edit)
+ ├── configs/droidspaces.requirements       ← 20 simbol GKI (auto-generated, jangan edit)
  ├── configs/droidspaces.source             ← pin SHA upstream DroidSpaces + hash patch
  ├── patches/9001…9005                      ← lapisan kompos
  ├── CHANGELOG.md                           ← akumulasi changelog (auto, per rilis)
@@ -87,7 +87,7 @@ atau rollback ke HEAD yang terbukti hijau.
 | # | Target | Makna |
 |---|---|---|
 | `9001` | kABI `sysvipc` slot 6–8 (GKI <6.12) | Menjaga layout struct IPC sesuai ekspektasi modul vendor (pengganti `9001b` slot 1–3 sengaja tidak dipakai — pasti gagal di tree ini) |
-| `9002` | `raviole_defconfig` | Baseline namespace/IPC + fitur DroidSpaces. Sejak v2, requirement **dinamis** diambil dari `configs/droidspaces.requirements` (hasil sinkronisasi dokumen resmi DroidSpaces, 19 simbol) dan di-merge saat build — quality gate menegakkan semuanya `=y` |
+| `9002` | `raviole_defconfig` | Baseline namespace/IPC + fitur DroidSpaces. Sejak v2, requirement **dinamis** diambil dari `configs/droidspaces.requirements` (hasil sinkronisasi dokumen resmi DroidSpaces, 20 simbol) dan di-merge saat build — quality gate menegakkan semuanya `=y` |
 | `9003` | Exempt daemon `droidspacesd` dari SUSFS | Daemon DroidSpaces melihat mount tree asli; root-hiding app lain tetap normal |
 | `9004` | `CONFIG_LOCALVERSION` | `-86hm` → `-Avenia` (identitas kernel) |
 | `9005` | `KernelSU/kernel/core/init.c` | Banner dmesg Avenia (string `pr_info`; `KSU_VERSION` & `KSU_PACKAGE_NAME` dijaga) |
@@ -126,7 +126,8 @@ Detail kelima patch (hasil hitung `+`/`-` langsung dari file patch):
 | `CONFIG_NETFILTER_ADVANCED` | absen | `=y` | membuka opsi XT (prasyarat NAT/UFW) |
 | `CONFIG_NETFILTER_XT_MATCH_ADDRTYPE` | absen | `=y` | NAT keluar |
 | `CONFIG_IP6_NF_NAT`, `CONFIG_IP6_NF_TARGET_MASQUERADE` | absen | `=y` | NAT IPv6 |
-| `CONFIG_NETFILTER_XT_TARGET_REJECT/LOG`, `MATCH_RECENT` | absen | `=y` | UFW + fail2ban |
+| `CONFIG_IP_NF_TARGET_REJECT` + `CONFIG_IP6_NF_TARGET_REJECT` | `=y` (sudah ada) | REJECT v4/v6 — pengganti nama lama `NETFILTER_XT_TARGET_REJECT` (tidak ada di 6.1) |
+| `CONFIG_NETFILTER_XT_TARGET_LOG`, `MATCH_RECENT` | absen | `=y` | UFW + fail2ban |
 | `CONFIG_TMPFS_XATTR`, `CONFIG_TMPFS_POSIX_ACL` | absen | `=y` | xattr/ACL di tmpfs (rootfs NixOS) |
 | `CONFIG_MACVLAN`, `CONFIG_IP_SET*`, `CONFIG_NETFILTER_XT_SET` | absen | `=y` (via `configs/droidspaces.requirements`) | jaringan container, UFW, fail2ban |
 
@@ -230,6 +231,18 @@ adalah (a) opsi config dan (b) patch kABI SYSVIPC. Keduanya dipublikasikan di
 Artinya: pembaruan DroidSpaces terdeteksi maksimal 24 jam, dan build baru berjalan hanya bila
 requirement benar-benar berubah (bukan rebuild harian yang membuang menit runner).
 
+**Resolusi simbol (sejak build #12).** Dua lapis penjaga mencegah "simbol hantu":
+
+1. **Alias nama lama** — dokumen upstream mendukung kernel 3.10+, jadi masih menulis
+   `CONFIG_NETFILTER_XT_TARGET_REJECT`. Simbol itu **tidak ada** di 6.1 (dipecah menjadi
+   `IP_NF_TARGET_REJECT` + `IP6_NF_TARGET_REJECT`); `droidspaces_sync.py` memetakannya otomatis
+   lewat tabel `RENAMED`.
+2. **Indeks Kconfig** — sebelum merge, CI membangun indeks `^config`/`^menuconfig` dari seluruh
+   `Kconfig*` di tree. Simbol yang tidak ada di indeks dilewati dengan `::warning::` dan dicatat di
+   step summary; hanya simbol yang benar-benar ada yang masuk `requirements.resolved` dan di-gate.
+   Tanpa ini, Kconfig membuang simbol secara diam-diam dan gate gagal tanpa sebab jelas
+   (persis kasus build #12).
+
 ### 4.2 Changelog lengkap & anti-rilis-duplikat
 
 Setiap rilis memuat: tabel perubahan SHA upstream (kernel/fork/scripts/AK3) + **judul commit**
@@ -307,6 +320,11 @@ cat /proc/version       # memuat -Avenia
   (lihat §3.2) — matikan toggle, lalu buka Issue dari workflow `sync-droidspaces`.
 - **Rilis tidak muncul padahal build hijau** → zip byte-identik dengan rilis terakhir (anti-duplikat, §4.2).
   Jalankan manual dengan `force_release=1` bila tetap ingin menerbitkan.
+- **Gate `MISSING: CONFIG_…`** → simbol diminta tapi tidak muncul di `out/.config`. Unduh artifact
+  `build-log-failed` (kini memuat `build.log` + `out/.config` + `requirements.resolved`), lalu cek
+  apakah simbol benar-benar ada di tree: `grep -rn '^config SYMBOL' kernel --include='Kconfig*'`.
+  Bila nama sudah berubah di kernel baru, tambahkan pemetaannya ke `RENAMED` di
+  `.github/scripts/droidspaces_sync.py` (contoh nyata: `NETFILTER_XT_TARGET_REJECT` → `IP_NF_*`/`IP6_NF_*`).
 - **`sync-droidspaces` merah** → biasanya format dokumen upstream berubah (anchor `## GKI kernels` /
   `### Step 2` hilang). Skrip sengaja gagal keras, bukan menulis requirement kosong.
 

@@ -42,6 +42,18 @@ SRC_FILE = ROOT / "configs" / "droidspaces.source"
 # Dua simbol ini sengaja dilarang: merusak kABI modul vendor prebuilt (bootloop).
 FORBIDDEN = {"CONFIG_CFS_BANDWIDTH", "CONFIG_CGROUP_PIDS"}
 
+# Nama simbol yang berubah di kernel modern (>= 4.18). Dokumen upstream masih
+# menuliskan nama lama karena mendukung kernel 3.10+, dan blok GKI-nya ikut
+# terbawa. Tanpa pemetaan ini, `make defconfig` membuang simbol tak dikenal
+# secara diam-diam → quality gate gagal (build #12: NETFILTER_XT_TARGET_REJECT).
+RENAMED = {
+    # xt_REJECT dipecah per-family: ipt_REJECT (IPv4) + ip6t_REJECT (IPv6).
+    "CONFIG_NETFILTER_XT_TARGET_REJECT": [
+        "CONFIG_IP_NF_TARGET_REJECT",
+        "CONFIG_IP6_NF_TARGET_REJECT",
+    ],
+}
+
 
 def die(msg: str) -> None:
     print(f"::error::{msg}")
@@ -101,8 +113,11 @@ def parse_requirements(block: str) -> list[str]:
         sym = m.group(1)
         if sym in FORBIDDEN:
             continue
-        if sym not in symbols:
-            symbols.append(sym)
+        for resolved in RENAMED.get(sym, [sym]):
+            if resolved in FORBIDDEN:
+                continue
+            if resolved not in symbols:
+                symbols.append(resolved)
     return symbols
 
 
@@ -118,6 +133,10 @@ def render_requirements(symbols: list[str], upstream_sha: str, upstream_date: st
         "# CATATAN ABI: CONFIG_CFS_BANDWIDTH dan CONFIG_CGROUP_PIDS sengaja TIDAK ada",
         "# di sini. Keduanya mengubah ukuran struktur scheduler/cgroup dan menggeser",
         "# CRC ribuan simbol vendor → modul stok Pixel 6 menolak load (bootloop).",
+        "#",
+        "# CATATAN NAMA: dokumen upstream memakai nama lama (mendukung 3.10+).",
+        "# CONFIG_NETFILTER_XT_TARGET_REJECT tidak ada di 6.1 → dipetakan otomatis ke",
+        "# CONFIG_IP_NF_TARGET_REJECT + CONFIG_IP6_NF_TARGET_REJECT (lihat RENAMED).",
         "",
     ]
     lines.extend(f"{sym}=y" for sym in symbols)

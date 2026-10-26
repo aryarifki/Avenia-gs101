@@ -127,8 +127,22 @@ jobs:
           set -euo pipefail
           DEFCONFIG=kernel/arch/arm64/configs/raviole_defconfig
           REQ=configs/droidspaces.requirements
+          RESOLVED="$GITHUB_WORKSPACE/requirements.resolved"
           [ -f "$REQ" ] || { echo "::error::$REQ tidak ada"; exit 1; }
-          added=0
+
+          # Indeks simbol Kconfig yang BENAR-BENAR ada di tree ini. Simbol dari
+          # dokumen upstream yang tidak ada (mis. nama lama sebelum 4.18)
+          # dilewati + warning. Tanpa ini Kconfig membuangnya diam-diam dan
+          # quality gate gagal tanpa sebab yang jelas (kasus build #12:
+          # CONFIG_NETFILTER_XT_TARGET_REJECT → sudah jadi IP_NF/ IP6_NF_*).
+          IDX=$(mktemp)
+          find kernel -type f -name 'Kconfig*' -print0 \
+            | xargs -0 grep -hE '^(menu)?config [A-Z0-9_]+' 2>/dev/null \
+            | awk '{print $2}' | sort -u > "$IDX" || true
+          echo "indeks Kconfig tree: $(wc -l < "$IDX") simbol"
+
+          : > "$RESOLVED"
+          added=0; skipped=0
           while IFS= read -r line; do
             sym="${line%%=*}"
             case "$sym" in
@@ -138,6 +152,11 @@ jobs:
               *) continue ;;
             esac
             printf '%s' "$line" | grep -qE '^CONFIG_[A-Z0-9_]+=y$' || continue
+            if ! grep -qx "${sym#CONFIG_}" "$IDX"; then
+              echo "::warning::$sym tidak ada di Kconfig tree ini — dilewati"
+              skipped=$((skipped+1)); continue
+            fi
+            printf '%s\n' "$line" >> "$RESOLVED"
             if grep -qE "^${sym}=y$" "$DEFCONFIG"; then continue; fi
             if grep -qE "^# ${sym} is not set$" "$DEFCONFIG"; then
               sed -i "s/^# ${sym} is not set$/${sym}=y/" "$DEFCONFIG"
@@ -146,8 +165,14 @@ jobs:
             fi
             added=$((added+1))
           done < "$REQ"
-          echo "DroidSpaces: $added simbol baru ditambahkan ke raviole_defconfig"
-          echo "total requirement: $(grep -cE '^CONFIG_' "$REQ")"
+          echo "DroidSpaces: $added simbol baru ditambahkan, $skipped dilewati"
+          echo "requirement efektif (di-gate): $(grep -cE '^CONFIG_' "$RESOLVED") simbol"
+          {
+            echo "### Requirement DroidSpaces"
+            echo "- ditambahkan ke defconfig: $added"
+            echo "- dilewati (tidak ada di Kconfig): $skipped"
+            echo "- di-gate: $(grep -cE '^CONFIG_' "$RESOLVED") simbol"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Branding + guard AnyKernel3
         run: |
@@ -179,18 +204,19 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/kernel"
+          REQ="$GITHUB_WORKSPACE/requirements.resolved"
+          [ -s "$REQ" ] || { echo "::error::requirements.resolved kosong — merge step gagal?"; exit 1; }
           failed=0
           while IFS= read -r line; do
             sym="${line%%=*}"
-            grep -qE "^CONFIG_[A-Z0-9_]+=y$" <<< "$line" || continue
             grep -qE "^${sym}=y$" out/.config \
-              || { echo "MISSING: ${sym}"; failed=1; }
-          done < "$GITHUB_WORKSPACE/configs/droidspaces.requirements"
+              || { echo "MISSING: ${sym} — diminta adendum DroidSpaces tapi tidak muncul di out/.config"; failed=1; }
+          done < "$REQ"
           if grep -qE '^CONFIG_(CFS_BANDWIDTH|CGROUP_PIDS)=y' out/.config; then
             echo "ABI-VENDOR: CFS_BANDWIDTH/CGROUP_PIDS harus tetap off"; failed=1
           fi
           [ "$failed" -eq 0 ] || exit 1
-          echo "=== gate DroidSpaces ✓ ($(grep -cE '^CONFIG_' "$GITHUB_WORKSPACE/configs/droidspaces.requirements") simbol) ==="
+          echo "=== gate DroidSpaces ✓ ($(grep -cE '^CONFIG_' "$REQ") simbol) ==="
 
       - name: Paket artifact + metadata build
         run: |
@@ -270,8 +296,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log-failed
-          path: build.log
+          path: |
+            build.log
+            kernel/out/.config
+            requirements.resolved
           retention-days: 3
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # Job terpisah: satu-satunya yang memegang token dengan hak tulis.
