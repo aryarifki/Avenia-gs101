@@ -1,0 +1,64 @@
+{
+  "run": 13,
+  "repo_sha": "8045ece954f5b88cbe806e4b25f39bbcc7ccaac3",
+  "event": "push",
+  "components": {
+    "kernel": {
+      "sha": "5edebf2b5afb2d9e687eedf81e5eba1ddf4e4428",
+      "date": "2026-10-21",
+      "subject": "Release: 6"
+    },
+    "ksu": {
+      "sha": "3f68e8785fb3400471292c817a29682b4ae99961",
+      "date": "2026-10-21",
+      "subject": "Fix wrapper mmap, allowlist RCU, and sucompat leaks"
+    },
+    "scripts": {
+      "sha": "e65f640122f94aa88b80b3cf012a1b1838b024e6",
+      "date": "2026-10-04",
+      "subject": "raviole/add_subtree: cover the full gs101 module set"
+    },
+    "ak3": {
+      "sha": "f6162979d5c4a5a24085acf9ec15baf4b196a607",
+      "date": "2026-09-22",
+      "subject": "raviole: Allow 2026 March systems to run the kernel"
+    }
+  },
+  "susfs": "v2.3.0",
+  "ksu_version": "32680",
+  "clang": "23.0.1",
+  "localversion": "-Avenia",
+  "patches": [
+    {
+      "file": "9001-GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch",
+      "sha256": "39f42dfc58261bcb78e5b6a566b603e925c2a1bf43e32e2e61db3e117d3f160f"
+    },
+    {
+      "file": "9002-DroidSpaces-raviole_defconfig.patch",
+      "sha256": "d48d9912aabfabd3395249b612c47cc296e29f5822a2f353f401702a47ab00fc"
+    },
+    {
+      "file": "9003-exempt-droidspacesd-susfs.patch",
+      "sha256": "843c87aa7a40335e243daeade39bc1889d47b190a59a456993f426b1e43e1358"
+    },
+    {
+      "file": "9004-avenia-rebrand.patch",
+      "sha256": "25c79d7cd9d99df572007ec9d6cf3ccc27ba5a85daac049e7ce77ea5c099e9a1"
+    },
+    {
+      "file": "9005-avenia-ksu-brand.patch",
+      "sha256": "eabb4d0a31445a070198add81fb14035aca9328261f2a612105b971fb7ea78c6"
+    }
+  ],
+  "droidspaces": {
+    "UPSTREAM_REPO": "ravindu644/droidspaces-oss",
+    "UPSTREAM_SHA": "d0b3a2e1fac8d238f78119879811119be35d32f4",
+    "UPSTREAM_DATE": "2026-10-26",
+    "DOC_SHA256": "6d2d9aca68193b4218930e719d7ff81a6d3a998bbec2fb98c01587b201b4180e",
+    "KABI_PATCH": "Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch",
+    "KABI_PATCH_SHA256": "47fc945b2d73d9737d56c0f1c3a74cda0a95c30f9dc1b1abe546fa48940c4460",
+    "REQUIREMENTS_COUNT": "20",
+    "REQUIREMENTS_FILE": "configs/droidspaces.requirements",
+    "SYNCED_AT": "2026-10-26T17:21:37Z"
+  }
+}
