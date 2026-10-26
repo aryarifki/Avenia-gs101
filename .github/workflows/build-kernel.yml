@@ -283,6 +283,16 @@ jobs:
           print(json.dumps(meta, indent=2))
           PY
 
+      - name: Smoke test zip — isi, identitas kernel, dan checksum
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/smoke_test.py --dist out
+          {
+            echo "### Smoke test artifact"
+            echo "Lulus: isi zip, branding AK3, banner \`Linux version …-Avenia\`, FDT dtb,"
+            echo "magic dtbo.img, dan sha256 vs \`checksums.txt\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload artifact (zip + checksum + metadata)
         uses: actions/upload-artifact@v4
         with:

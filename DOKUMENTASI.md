@@ -63,7 +63,7 @@ milik upstream utuh.
 aryarifki/Avenia-gs101  (±100 KB — resep)
  ├── .github/workflows/build-kernel.yml     ← build + quality gate + rilis + changelog
  ├── .github/workflows/sync-droidspaces.yml ← sinkron requirement kernel DroidSpaces
- ├── .github/scripts/                       ← generator changelog & sync DroidSpaces
+ ├── .github/scripts/                       ← changelog, sync DroidSpaces, smoke test artifact
  ├── configs/droidspaces.requirements       ← 20 simbol GKI (auto-generated, jangan edit)
  ├── configs/droidspaces.source             ← pin SHA upstream DroidSpaces + hash patch
  ├── patches/9001…9005                      ← lapisan kompos
@@ -203,10 +203,14 @@ grep -n 'ANDROID_KABI_USE(6' kernel/include/linux/sched.h
    `CFS_BANDWIDTH`/`CGROUP_PIDS` wajib off.
 9. **Paket + metadata** — zip, `checksums.txt`, `meta.json` (SHA & tanggal upstream,
    versi SUSFS/KernelSU, clang, hash tiap patch, state DroidSpaces).
-10. **Upload artifact** — retensi 14 hari; `build-log-failed` 3 hari hanya bila merah.
-11. **Job rilis (terpisah, satu-satunya pemegang `contents: write`)** — susun changelog lengkap,
+10. **Smoke test artifact** — `.github/scripts/smoke_test.py` (stdlib, ±9 detik):
+    CRC seluruh entri zip, `kernel.string` + device-check AK3, banner `Linux version …-Avenia`
+    **di dalam** Image (LZ4 legacy didekode tanpa tool eksternal), magic `dtb`/`dtbo.img`,
+    dan sha256 zip vs `checksums.txt`. Gagal di sini = build merah → zip rusak tidak pernah terbit.
+11. **Upload artifact** — retensi 14 hari; `build-log-failed` 3 hari hanya bila merah.
+12. **Job rilis (terpisah, satu-satunya pemegang `contents: write`)** — susun changelog lengkap,
     cek duplikat sha256 terhadap rilis terakhir, buat tag `avenia-gs101-r<N>` + zip + checksums.
-12. **Update `CHANGELOG.md` + `.upstream-state.json`** — commit oleh `github-actions[bot]`
+13. **Update `CHANGELOG.md` + `.upstream-state.json`** — commit oleh `github-actions[bot]`
     (`[skip ci]`), sehingga riwayat changelog menumpuk di repo, bukan hanya di halaman Releases.
 
 Trigger: push `patches/**` atau `configs/**` • manual *Run workflow* (bisa pin ref + `force_release=1`)
@@ -252,6 +256,9 @@ verifikasi, dan checksum. Zip yang **byte-identik** dengan rilis terakhir tidak 
 baru (artifact tetap dipertahankan); override dengan `force_release=1`.
 
 ## 5. Verifikasi binary-first SEBELUM flash (disiplin wajib)
+
+CI sudah menjalankan pemeriksaan isi zip secara otomatis (lihat §4 langkah 10: smoke test).
+Blok di bawah ini untuk verifikasi manual di sisi Anda — tetap wajib sebelum flash.
 
 ```bash
 # (A) checksum — bandingkan dengan checksums.txt di halaman rilis

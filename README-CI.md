@@ -23,7 +23,8 @@ github-ci/
 │   ├── workflows/sync-droidspaces.yml     ← sinkron requirement DroidSpaces (harian 02:00 UTC)
 │   └── scripts/
 │       ├── release_notes.py               ← generator changelog + deteksi rilis duplikat
-│       └── droidspaces_sync.py            ← ekstraktor requirement GKI + hash patch kABI
+│       ├── droidspaces_sync.py            ← ekstraktor requirement GKI + hash patch kABI
+│       └── smoke_test.py                  ← uji isi zip sebelum artifact diunggah
 ├── configs/
 │   ├── droidspaces.requirements           ← 20 simbol GKI (auto-generated)
 │   └── droidspaces.source                 ← pin SHA upstream + hash dokumen & patch kABI
@@ -78,6 +79,7 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
 | Banner dmesg | patch 9005: saat init kernel, dmesg/logcat menampilkan `Avenia Kernel by aryarifki \|\| welcome to KernelSU version …` — string log saja, tidak menyentuh `KSU_VERSION`/`KSU_PACKAGE_NAME` (aman untuk deteksi manager) |
 | Build | `CLANG_SOURCE=aosp` (prebuilt, jauh lebih cepat daripada klon LLVM kernel.org), `ZIPNAME=Avenia KSU=1 IS_RELEASE=1` → zip final jatuh di `kernel/AnyKernel3/*.zip` |
 | Quality gate | semua simbol di `configs/droidspaces.requirements` wajib `=y` di `out/.config`, dan `CFS_BANDWIDTH`/`CGROUP_PIDS` wajib tetap off — build gagal bila dilanggar |
+| Smoke test | sebelum upload: CRC seluruh entri, `kernel.string` + device AK3, banner `-Avenia` di dalam Image (LZ4 legacy didekode stdlib), magic `dtb`/`dtbo.img`, sha256 vs `checksums.txt` — gagal = build merah, zip tidak terbit |
 | Artifact | zip + `checksums.txt` + `meta.json` (retensi 14 hari) + log gagal (3 hari) |
 | Rilis | job terpisah (`contents: write`): changelog lengkap, cek duplikat sha256, tag `avenia-gs101-r<N>`, update `CHANGELOG.md` + `.upstream-state.json` |
 
