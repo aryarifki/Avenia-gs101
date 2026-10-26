@@ -1,35 +1,73 @@
 name: build-avenia-gs101-droidspaces
 
 # Trigger:
-#  - Manual: tab Actions → Run workflow
-#  - Otomatis: setiap kali patches/** atau workflow ini berubah
+#  - Manual: tab Actions → Run workflow (bisa PIN ref upstream untuk build reproducible)
+#  - Otomatis: push patches/** atau configs/**, cron Senin 03:00 UTC
+#  - Sinkronisasi DroidSpaces: workflow sync-droidspaces men-dispatch build ini
 on:
   workflow_dispatch:
     inputs:
       is_release:
-        description: "IS_RELEASE=1 → hardening clang (CFI/SCS/LTO) + zip ...-release"
+        description: "IS_RELEASE=1 → LTO/CFI/SCS + zip release"
         required: false
         default: "1"
+      kernel_ref:
+        description: "Pin Reinazhard/guacamole_sickness (branch/tag/SHA penuh; kosong=staging)"
+        required: false
+        default: ""
+      ksu_ref:
+        description: "Pin Reinazhard/KernelSU (kosong=fork)"
+        required: false
+        default: ""
+      scripts_ref:
+        description: "Pin Reinazhard/scripts (kosong=main)"
+        required: false
+        default: ""
+      ak3_ref:
+        description: "Pin Reinazhard/AnyKernel3 (kosong=raviole)"
+        required: false
+        default: ""
+      force_release:
+        description: "1 = tetap terbitkan rilis walau zip identik dengan rilis terakhir"
+        required: false
+        default: "0"
   schedule:
-    # Rebuild mingguan otomatis — selalu HEAD upstream saat clone:
-    # kernel staging, KernelSU fork, AnyKernel3, toolchain AOSP.
+    # Rebuild mingguan — selalu HEAD upstream saat clone (kecuali di-pin manual).
     - cron: "0 3 * * 1"   # Senin 03:00 UTC (±10:00 WIB)
   push:
+    branches: [main]
     paths:
-      - "patches/**"        # edit workflow sengaja TIDAK men-trigger build
+      - "patches/**"        # perubahan patch → wajib build
+      - "configs/**"        # requirement DroidSpaces berubah → wajib build
+      # edit workflow/docs sengaja TIDAK men-trigger build
 
 permissions:
-  contents: write   # dibutuhkan untuk membuat tag & release otomatis
+  contents: read
+
+# Satu build per ref; dispatch baru membatalkan build lama (hemat menit runner).
+concurrency:
+  group: avenia-gs101-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KERNEL_REPO: Reinazhard/guacamole_sickness
+  KSU_REPO: Reinazhard/KernelSU
+  SCRIPTS_REPO: Reinazhard/scripts
+  AK3_REPO: Reinazhard/AnyKernel3
 
 jobs:
   build:
     name: avenia-gs101 (KernelSU fork + DroidSpaces)
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    permissions:
+      contents: read        # build tidak perlu hak tulis
 
     steps:
-      - name: Checkout repo CI
+      - name: Checkout repo CI (token tidak disimpan di .git/config)
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Bebaskan disk runner
         run: |
@@ -45,92 +83,187 @@ jobs:
           sudo apt-get install -y bc bison build-essential cpio dwarves flex kmod \
             libssl-dev libncurses-dev rsync wget zip
 
-      - name: Clone kernel (staging) + scripts (build.sh) + KernelSU (fork)
+      - name: Clone upstream (dengan opsi pin)
+        env:
+          KREF: ${{ inputs.kernel_ref }}
+          KREF_KSU: ${{ inputs.ksu_ref }}
+          SREF: ${{ inputs.scripts_ref }}
+          AREF: ${{ inputs.ak3_ref }}
         run: |
-          git clone --depth 1 -b staging https://github.com/Reinazhard/guacamole_sickness kernel
-          git clone --depth 1 https://github.com/Reinazhard/scripts scripts
-          git clone --depth 1 -b fork https://github.com/Reinazhard/KernelSU kernel/KernelSU
+          set -euo pipefail
+          clone_pin() {
+            url="$1"; ref="$2"; dir="$3"
+            echo ">>> $url @ ${ref:-<default>} → $dir"
+            if [ -n "$ref" ] && git clone --depth 1 --branch "$ref" "$url" "$dir" 2>/dev/null; then
+              :
+            else
+              rm -rf "$dir"
+              git clone --depth 1 "$url" "$dir"
+              if [ -n "$ref" ]; then
+                echo "    ref bukan branch — fetch SHA/tag: $ref"
+                git -C "$dir" fetch --depth 1 origin "$ref" || {
+                  echo "::error::gagal fetch '$ref' — pakai branch, tag, atau SHA penuh (40 karakter)"; exit 1; }
+                git -C "$dir" checkout -q FETCH_HEAD
+              fi
+            fi
+            git -C "$dir" log -1 --format='    HEAD %H %cs %s'
+          }
+          clone_pin "https://github.com/$KERNEL_REPO"  "${KREF:-staging}" kernel
+          clone_pin "https://github.com/$SCRIPTS_REPO" "${SREF:-main}"    scripts
+          clone_pin "https://github.com/$KSU_REPO"     "${KREF_KSU:-fork}" kernel/KernelSU
+          clone_pin "https://github.com/$AK3_REPO"     "${AREF:-raviole}"  kernel/AnyKernel3
 
-      - name: Terapkan patch DroidSpaces
+      - name: Terapkan patch Avenia (9001 → 9005)
         run: |
-          set -e
+          set -euo pipefail
           cd kernel
           for p in ../patches/*.patch; do
             echo ">>> applying $p"
             patch -p1 --forward < "$p"
           done
 
-      - name: Pre-clone AnyKernel3 + brand Avenia (kernel.string)
+      - name: "Terapkan requirement DroidSpaces (sumber: configs/droidspaces.requirements)"
         run: |
-          git clone --depth 1 https://github.com/Reinazhard/AnyKernel3 kernel/AnyKernel3
-          sed -i 's|^kernel.string=.*|kernel.string=Avenia Kernel by aryarifki|' kernel/AnyKernel3/anykernel.sh
-          grep -n kernel.string kernel/AnyKernel3/anykernel.sh
+          set -euo pipefail
+          DEFCONFIG=kernel/arch/arm64/configs/raviole_defconfig
+          REQ=configs/droidspaces.requirements
+          [ -f "$REQ" ] || { echo "::error::$REQ tidak ada"; exit 1; }
+          added=0
+          while IFS= read -r line; do
+            sym="${line%%=*}"
+            case "$sym" in
+              CONFIG_CFS_BANDWIDTH|CONFIG_CGROUP_PIDS)
+                echo "::error::$sym dilarang — merusak kABI modul vendor prebuilt"; exit 1 ;;
+              CONFIG_*) ;;
+              *) continue ;;
+            esac
+            printf '%s' "$line" | grep -qE '^CONFIG_[A-Z0-9_]+=y$' || continue
+            if grep -qE "^${sym}=y$" "$DEFCONFIG"; then continue; fi
+            if grep -qE "^# ${sym} is not set$" "$DEFCONFIG"; then
+              sed -i "s/^# ${sym} is not set$/${sym}=y/" "$DEFCONFIG"
+            else
+              printf '\n%s\n' "$line" >> "$DEFCONFIG"
+            fi
+            added=$((added+1))
+          done < "$REQ"
+          echo "DroidSpaces: $added simbol baru ditambahkan ke raviole_defconfig"
+          echo "total requirement: $(grep -cE '^CONFIG_' "$REQ")"
 
-      - name: Build (ZIPNAME=Avenia, KSU=1, IS_RELEASE=1, CLANG_SOURCE=aosp)
+      - name: Branding + guard AnyKernel3
+        run: |
+          set -euo pipefail
+          AK=kernel/AnyKernel3/anykernel.sh
+          sed -i 's|^kernel.string=.*|kernel.string=Avenia Kernel by aryarifki|' "$AK"
+          test "$(grep -c '^kernel.string=Avenia Kernel by aryarifki$' "$AK")" = 1 \
+            || { echo "::error::kernel.string gagal di-set"; exit 1; }
+          for d in oriole raven bluejay; do
+            grep -qE "^device\.name[0-9]+=${d}$" "$AK" \
+              || { echo "::error::device-check '$d' hilang dari AK3 upstream"; exit 1; }
+          done
+          grep -qE '^do\.devicecheck=1$' "$AK" \
+            || { echo "::error::do.devicecheck bukan 1"; exit 1; }
+          grep -qE '^do\.modules=0$' "$AK" \
+            || { echo "::error::do.modules bukan 0 — modul vendor Pixel bisa tertimpa"; exit 1; }
+          grep -q 'flash_generic dtbo' "$AK" \
+            || { echo "::error::flash_generic dtbo hilang — dtbo Pixel tidak ter-flash"; exit 1; }
+          echo "AK3 guard ✓ (devicecheck oriole/raven/bluejay, do.modules=0, dtbo)"
+
+      - name: Build (ZIPNAME=Avenia, KSU=1, IS_RELEASE, CLANG_SOURCE=aosp)
         run: |
           cd "$GITHUB_WORKSPACE/kernel"
           set -o pipefail
-          CLANG_SOURCE=aosp IS_RELEASE=1 KSU=1 ZIPNAME=Avenia \
+          CLANG_SOURCE=aosp IS_RELEASE=${{ inputs.is_release || '1' }} KSU=1 ZIPNAME=Avenia \
             bash ../scripts/raviole/build.sh 2>&1 | tee ../build.log
 
-      - name: Quality gate — wajib configs DroidSpaces =y
+      - name: Quality gate — semua requirement DroidSpaces =y + larangan kABI
         run: |
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE/kernel"
           failed=0
-          for k in UTS_NS PID_NS IPC_NS SYSVIPC POSIX_MQUEUE USER_NS DEVTMPFS \
-                   NETFILTER_ADVANCED NETFILTER_XT_MATCH_ADDRTYPE \
-                   IP6_NF_NAT IP6_NF_TARGET_MASQUERADE TMPFS_XATTR TMPFS_POSIX_ACL; do
-            grep -q "^CONFIG_${k}=y" out/.config || { echo "MISSING: CONFIG_${k}"; failed=1; }
-          done
+          while IFS= read -r line; do
+            sym="${line%%=*}"
+            grep -qE "^CONFIG_[A-Z0-9_]+=y$" <<< "$line" || continue
+            grep -qE "^${sym}=y$" out/.config \
+              || { echo "MISSING: ${sym}"; failed=1; }
+          done < "$GITHUB_WORKSPACE/configs/droidspaces.requirements"
           if grep -qE '^CONFIG_(CFS_BANDWIDTH|CGROUP_PIDS)=y' out/.config; then
-            echo "ABI-VENDOR melanggar: CFS_BANDWIDTH/CGROUP_PIDS harus tetap off"; failed=1
+            echo "ABI-VENDOR: CFS_BANDWIDTH/CGROUP_PIDS harus tetap off"; failed=1
           fi
-          [ "$failed" = 1 ] && exit 1
-          echo "=== .config DroidSpaces ✓ ==="
+          [ "$failed" -eq 0 ] || exit 1
+          echo "=== gate DroidSpaces ✓ ($(grep -cE '^CONFIG_' "$GITHUB_WORKSPACE/configs/droidspaces.requirements") simbol) ==="
 
-      - name: Upload flashable zip (AnyKernel3)
+      - name: Paket artifact + metadata build
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          ZIP=$(ls kernel/AnyKernel3/*.zip | head -1)
+          cp "$ZIP" out/
+          ( cd out && sha256sum "$(basename "$ZIP")" > checksums.txt && cat checksums.txt )
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          def git_log(path):
+              out = subprocess.check_output(
+                  ["git", "-C", path, "log", "-1", "--format=%H%n%cs%n%s"], text=True
+              ).strip().split("\n")
+              return {"sha": out[0], "date": out[1], "subject": out[2]}
+
+          meta = {
+              "run": int(os.environ["GITHUB_RUN_NUMBER"]),
+              "repo_sha": os.environ["GITHUB_SHA"],
+              "event": os.environ["GITHUB_EVENT_NAME"],
+              "components": {
+                  "kernel": git_log("kernel"),
+                  "ksu": git_log("kernel/KernelSU"),
+                  "scripts": git_log("scripts"),
+                  "ak3": git_log("kernel/AnyKernel3"),
+              },
+          }
+
+          try:
+              susfs = pathlib.Path("kernel/include/linux/susfs.h").read_text(errors="ignore")
+              m = re.search(r'#define\s+SUSFS_VERSION\s+"([^"]+)"', susfs)
+              meta["susfs"] = m.group(1) if m else "unknown"
+          except FileNotFoundError:
+              meta["susfs"] = "unknown"
+
+          try:
+              kbuild = pathlib.Path("kernel/KernelSU/kernel/Kbuild").read_text(errors="ignore")
+              m = re.search(r'^KSU_VERSION\s*:=\s*(\d+)', kbuild, re.M)
+              meta["ksu_version"] = m.group(1) if m else "unknown"
+          except FileNotFoundError:
+              meta["ksu_version"] = "unknown"
+
+          try:
+              log = pathlib.Path("build.log").read_text(errors="ignore")
+              m = re.findall(r'clang version (\d+\.\d+\.\d+)', log)
+              meta["clang"] = m[-1] if m else "unknown"
+          except FileNotFoundError:
+              meta["clang"] = "unknown"
+
+          defconfig = pathlib.Path("kernel/arch/arm64/configs/raviole_defconfig").read_text(errors="ignore")
+          m = re.search(r'^CONFIG_LOCALVERSION="([^"]*)"', defconfig, re.M)
+          meta["localversion"] = m.group(1) if m else ""
+          meta["patches"] = [
+              {"file": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+              for p in sorted(pathlib.Path("patches").glob("*.patch"))
+          ]
+          meta["droidspaces"] = {
+              line.split("=", 1)[0]: line.split("=", 1)[1]
+              for line in pathlib.Path("configs/droidspaces.source").read_text().splitlines()
+              if "=" in line and not line.startswith("#")
+          }
+          pathlib.Path("out/meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+          print(json.dumps(meta, indent=2))
+          PY
+
+      - name: Upload artifact (zip + checksum + metadata)
         uses: actions/upload-artifact@v4
         with:
           name: avenia-gs101-ksu-release-droidspaces
-          path: kernel/AnyKernel3/*.zip
+          path: out/
           retention-days: 14
           if-no-files-found: error
-
-      - name: Susun checksum + catatan rilis
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          sha256sum kernel/AnyKernel3/*.zip > checksums.txt
-          {
-            echo "**Avenia Kernel by aryarifki** — gs101 (Pixel 6 / 6 Pro / 6a)"
-            echo ""
-            echo "| Komponen | HEAD upstream saat build |"
-            echo "|---|---|"
-            echo "| Kernel staging (Reinazhard/guacamole_sickness) | \`$(git -C kernel log -1 --format='%h %cs')\` |"
-            echo "| KernelSU fork (Reinazhard) | \`$(git -C kernel/KernelSU log -1 --format='%h %s')\` |"
-            SUSFSV=$(grep -m1 'define SUSFS_VERSION' kernel/include/linux/susfs.h | awk '{print $3}' | tr -d '"')
-            echo "| SUSFS | \`${SUSFSV}\` |"
-            echo "| Dibangun dari | \`${{ github.sha }}\` (run #${{ github.run_number }}) |"
-            echo ""
-            echo "**Flash:** \`.zip\` via Recovery/TWRP — device-check oriole/raven/bluejay aktif."
-            echo "Pasca-boot: \`dmesg | grep Avenia\` harus menampilkan banner."
-            echo ""
-            echo "### SHA256"
-            echo '```'
-            cat checksums.txt
-            echo '```'
-            echo ""
-            echo "Kredit: Reinazhard (kernel staging, fork KernelSU, scripts/AnyKernel3) · simonpunk (SUSFS) · tiann (KernelSU) · osm0sis dkk (AnyKernel3) · AOSP (clang) — detail: DOKUMENTASI.md"
-          } > release-notes.md
-      - name: Rilis otomatis → halaman Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: avenia-gs101-r${{ github.run_number }}
-          name: Avenia gs101 r${{ github.run_number }}
-          body_path: release-notes.md
-          files: |
-            kernel/AnyKernel3/*.zip
-            checksums.txt
-          fail_on_unmatched_files: true
 
       - name: Upload log GAGAL (debug)
         if: failure()
@@ -139,3 +272,104 @@ jobs:
           name: build-log-failed
           path: build.log
           retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # Job terpisah: satu-satunya yang memegang token dengan hak tulis.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Rilis + changelog
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: avenia-gs101-release
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout (riwayat penuh untuk changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download artifact build
+        uses: actions/download-artifact@v4
+        with:
+          name: avenia-gs101-ksu-release-droidspaces
+          path: dist
+
+      - name: Susun changelog + cek duplikat
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_RELEASE: ${{ inputs.force_release || '0' }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/release_notes.py \
+            --dist dist \
+            --meta dist/meta.json \
+            --out release-notes.md \
+            --changelog changelog-section.md \
+            --repo "$GITHUB_REPOSITORY" \
+            --run "$GITHUB_RUN_NUMBER" \
+            --sha "$GITHUB_SHA" \
+            --event "$GITHUB_EVENT_NAME" \
+            --force "${FORCE_RELEASE}"
+          echo "### Hasil" >> "$GITHUB_STEP_SUMMARY"
+          echo "- zip: \`$(ls dist/*.zip | xargs -n1 basename)\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- sha256: \`$(grep -oE '^[0-9a-f]{64}' dist/checksums.txt)\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- duplikat: \`${{ steps.notes.outputs.duplicate }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rilis otomatis → halaman Releases
+        if: steps.notes.outputs.duplicate != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: avenia-gs101-r${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Avenia gs101 r${{ github.run_number }}
+          body_path: release-notes.md
+          files: |
+            dist/*.zip
+            dist/checksums.txt
+          fail_on_unmatched_files: true
+          make_latest: true
+
+      - name: Update CHANGELOG.md + state upstream
+        if: steps.notes.outputs.duplicate != 'true'
+        run: |
+          set -euo pipefail
+          git pull --rebase origin "${GITHUB_REF_NAME}" >/dev/null 2>&1 || true
+          {
+            echo "# Changelog — Avenia Kernel (gs101)"
+            echo
+            echo "Digenerate otomatis oleh CI. Setiap entri = satu rilis GitHub."
+            echo
+            cat changelog-section.md
+            if [ -f CHANGELOG.md ]; then
+              sed -n '/^## /,$p' CHANGELOG.md
+            fi
+          } > CHANGELOG.new
+          mv CHANGELOG.new CHANGELOG.md
+          cp dist/meta.json .upstream-state.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md .upstream-state.json
+          if git diff --cached --quiet; then
+            echo "tidak ada perubahan CHANGELOG/state"
+            exit 0
+          fi
+          git commit -m "changelog: r$GITHUB_RUN_NUMBER [skip ci]"
+          git push
+
+      - name: Ringkasan bila rilis dilewati
+        if: steps.notes.outputs.duplicate == 'true'
+        run: |
+          {
+            echo "## Rilis dilewati (duplikat)"
+            echo
+            echo "Zip yang dibangun **byte-identik** dengan rilis terakhir — tidak ada perubahan"
+            echo "biner (upstream & patch tidak berubah). Artifact tetap tersimpan 14 hari."
+            echo
+            echo "Butuh rilis tetap dibuat? Jalankan manual dengan \`force_release=1\`."
+          } >> "$GITHUB_STEP_SUMMARY"

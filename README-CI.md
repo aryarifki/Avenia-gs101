@@ -55,25 +55,35 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
 |---|---|
 | Bebaskan disk | hapus SDK Android/.NET/CodeQL preinstalled runner (~+25 GB) |
 | Deps host | `bc bison flex cpio dwarves(pahole) libssl-dev kmod rsync zip` |
-| Clone | kernel `staging` + `scripts` (build.sh) + KernelSU `fork` → `kernel/KernelSU` (posisi ini dihormati build.sh, tidak di-clone ulang) |
+| Clone | kernel `staging` + `scripts` (build.sh) + KernelSU `fork` → `kernel/KernelSU` (posisi ini dihormati build.sh, tidak di-clone ulang). Bisa **di-pin** per-run lewat input `kernel_ref`/`ksu_ref`/`scripts_ref`/`ak3_ref` |
 | Patch | `patch -p1` untuk kelima patch, berurutan |
-| Brand Avenia | pre-clone AnyKernel3 (`Reinazhard/AnyKernel3`) → build.sh menghormati AK3 yang sudah ada; sed `kernel.string=Avenia Kernel by aryarifki` |
+| Requirement DroidSpaces | `configs/droidspaces.requirements` (digenerate dari dokumen resmi DroidSpaces, 19 simbol) di-merge ke `raviole_defconfig`; simbol terlarang (`CFS_BANDWIDTH`/`CGROUP_PIDS`) ditolak keras |
+| Brand + guard AK3 | sed `kernel.string=Avenia Kernel by aryarifki`, lalu assert: `device.name*=oriole/raven/bluejay`, `do.devicecheck=1`, `do.modules=0`, `flash_generic dtbo` — build gagal bila upstream AK3 mengubah salah satunya |
 | Banner dmesg | patch 9005: saat init kernel, dmesg/logcat menampilkan `Avenia Kernel by aryarifki \|\| welcome to KernelSU version …` — string log saja, tidak menyentuh `KSU_VERSION`/`KSU_PACKAGE_NAME` (aman untuk deteksi manager) |
 | Build | `CLANG_SOURCE=aosp` (prebuilt, jauh lebih cepat daripada klon LLVM kernel.org), `ZIPNAME=Avenia KSU=1 IS_RELEASE=1` → zip final jatuh di `kernel/AnyKernel3/*.zip` |
-| Quality gate | assert semua config DroidSpaces `=y` di `out/.config` dan `CFS_BANDWIDTH`/`CGROUP_PIDS` tetap off — build dianggap gagal bila lolos |
-| Artifact | zip AnyKernel3 (retensi 14 hari) + log gagal (3 hari) |
+| Quality gate | semua simbol di `configs/droidspaces.requirements` wajib `=y` di `out/.config`, dan `CFS_BANDWIDTH`/`CGROUP_PIDS` wajib tetap off — build gagal bila dilanggar |
+| Artifact | zip + `checksums.txt` + `meta.json` (retensi 14 hari) + log gagal (3 hari) |
+| Rilis | job terpisah (`contents: write`): changelog lengkap, cek duplikat sha256, tag `avenia-gs101-r<N>`, update `CHANGELOG.md` + `.upstream-state.json` |
 
 ## 4. Build "otomatis" level berikutnya (opsional)
 
-- **Build tiap kali patch berubah**: sudah aktif (trigger `push` pada `patches/**`).
+- **Build tiap kali patch berubah**: sudah aktif (trigger `push` pada `patches/**` dan `configs/**`).
 - **Build terjadwal mengikuti upstream**: SUDAH AKTIF — cron `0 3 * * 1`
   (Senin 03:00 UTC / ±10:00 WIB), selalu memakai HEAD upstream saat clone
   (kernel staging, KernelSU fork, AnyKernel3, toolchain AOSP). Note: edit file
-  workflow sendiri sengaja tidak lagi men-trigger build otomatis (perubahan
-  patch saja yang men-trigger).
-- **Release otomatis**: SUDAH AKTIF — setiap build sukses membuat tag `avenia-gs101-r<N>` +
-  zip & `checksums.txt` di halaman Releases (softprops/action-gh-release). Panduan lengkap:
-  lihat **DOKUMENTASI.md**.
+  workflow sendiri sengaja tidak lagi men-trigger build otomatis.
+- **Build reproducible / rollback**: SUDAH AKTIF — input `kernel_ref`, `ksu_ref`,
+  `scripts_ref`, `ak3_ref` (branch/tag/SHA) saat *Run workflow*; kosong = HEAD upstream.
+- **Sinkronisasi DroidSpaces otomatis**: SUDAH AKTIF — workflow `sync-droidspaces.yml`
+  (harian 02:00 UTC) mengambil `ravindu644/droidspaces-oss`, mengekstrak requirement GKI
+  dari `Documentation/Kernel-Configuration.md`, dan men-dispatch build bila daftarnya
+  berubah. Patch kABI upstream yang berubah → Issue untuk review (patch 9001 kita
+  diadaptasi ke slot padding 6–8).
+- **Release otomatis + changelog**: SUDAH AKTIF — setiap build yang menghasilkan biner
+  berbeda membuat tag `avenia-gs101-r<N>`, zip + `checksums.txt` + changelog lengkap
+  (perubahan upstream, perubahan repo, patch stack, SUSFS/KernelSU/clang, sha256).
+  Build yang zip-nya byte-identik dengan rilis terakhir **tidak** membuat rilis baru
+  (override: `force_release=1`). Panduan lengkap: **DOKUMENTASI.md**.
 
 ## 5. Kalau tetap ingin build dari terminal ini (proot Android)
 

@@ -1,0 +1,30 @@
+# DroidSpaces — requirement defconfig untuk Avenia (GKI 6.1 / android14-6.1)
+# Sumber: ravindu644/droidspaces-oss @ d0b3a2e1fac8 (2026-10-26)
+# Dokumen: Documentation/Kernel-Configuration.md → 'GKI kernels' → Step 2
+#
+# DIGENERATE OTOMATIS oleh .github/workflows/sync-droidspaces.yml.
+# Jangan edit manual — perubahan akan tertimpa pada sinkronisasi berikutnya.
+#
+# CATATAN ABI: CONFIG_CFS_BANDWIDTH dan CONFIG_CGROUP_PIDS sengaja TIDAK ada
+# di sini. Keduanya mengubah ukuran struktur scheduler/cgroup dan menggeser
+# CRC ribuan simbol vendor → modul stok Pixel 6 menolak load (bootloop).
+
+CONFIG_SYSVIPC=y
+CONFIG_POSIX_MQUEUE=y
+CONFIG_IPC_NS=y
+CONFIG_PID_NS=y
+CONFIG_DEVTMPFS=y
+CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+CONFIG_USER_NS=y
+CONFIG_IP6_NF_NAT=y
+CONFIG_IP6_NF_TARGET_MASQUERADE=y
+CONFIG_MACVLAN=y
+CONFIG_NETFILTER_XT_TARGET_REJECT=y
+CONFIG_NETFILTER_XT_TARGET_LOG=y
+CONFIG_NETFILTER_XT_MATCH_RECENT=y
+CONFIG_IP_SET=y
+CONFIG_IP_SET_HASH_IP=y
+CONFIG_IP_SET_HASH_NET=y
+CONFIG_NETFILTER_XT_SET=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TMPFS_XATTR=y

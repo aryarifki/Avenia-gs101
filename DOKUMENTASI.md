@@ -19,7 +19,7 @@ Kredit tangan-pertama (paling berpengaruh teratas):
 | **simonpunk** | `susfs4ksu` (GitLab) | SUSFS — lapisan root-hiding (keluarga ABI v2.3) |
 | **tiann (Weishu)** | `KernelSU` | Proyek induk driver root & manager resmi `me.weishu.kernelsu` |
 | **osm0sis dkk** | AnyKernel3 upstream | Kerangka flashable zip (AK3) universal yang ditopang seluruh ekosistem |
-| **Tim DroidSpaces** | aplikasi & spesifikasi config | Tujuan kompatibilitas patch 9002/9003 (namespace/IPC/exempt daemon susfs) |
+| **ravindu644** | `droidspaces-oss` (app, dokumen `Kernel-Configuration.md`, patch kABI SYSVIPC) | Sumber requirement kernel yang diikuti patch 9001–9003; disinkronkan otomatis oleh workflow `sync-droidspaces` |
 | **AOSP / Google** | prebuilt clang r614150 | Toolchain build (`CLANG_SOURCE=aosp`) |
 | **aryarifki** | repo `Avenia-gs101` ini | Resep CI, patch 9004–9005 (identitas Avenia), dokumentasi & rilis |
 
@@ -54,28 +54,34 @@ milik upstream utuh.
 ## 2. Arsitektur build (pola "resep", bukan fork)
 
 ```
-aryarifki/Avenia-gs101  (±60 KB — resep)
- ├── .github/workflows/build-kernel.yml   ← otak CI
- ├── patches/9001…9005                    ← lapisan kompos
- └── README-CI.md + DOKUMENTASI.md        ← dokumentasi
+aryarifki/Avenia-gs101  (±100 KB — resep)
+ ├── .github/workflows/build-kernel.yml     ← build + quality gate + rilis + changelog
+ ├── .github/workflows/sync-droidspaces.yml ← sinkron requirement kernel DroidSpaces
+ ├── .github/scripts/                       ← generator changelog & sync DroidSpaces
+ ├── configs/droidspaces.requirements       ← 19 simbol GKI (auto-generated, jangan edit)
+ ├── configs/droidspaces.source             ← pin SHA upstream DroidSpaces + hash patch
+ ├── patches/9001…9005                      ← lapisan kompos
+ ├── CHANGELOG.md                           ← akumulasi changelog (auto, per rilis)
+ └── README-CI.md + DOKUMENTASI.md          ← dokumentasi
 
           └── saat CI jalan, runner meng-clone segar:
                 ├─ https://github.com/Reinazhard/guacamole_sickness  @staging  → tree kernel utama
                 ├─ https://github.com/Reinazhard/scripts                       → build.sh raviole
                 ├─ https://github.com/Reinazhard/KernelSU            @fork     → kernel/KernelSU (driver root)
-                └─ https://github.com/Reinazhard/AnyKernel3                    → kernel/AnyKernel3 (pembungkus zip)
+                └─ https://github.com/Reinazhard/AnyKernel3         @raviole  → kernel/AnyKernel3 (pembungkus zip)
 ```
 
 Keuntungan pola ini: repo tetap kecil, HEAD upstream diikuti (rebuild mingguan otomatis),
-tanpa beban merge pohon kernel ~2 GB. Fork penuh hanya masuk akal jika Anda berubah menjadi
-developer kernel aktif atau butuh HEAD terkunci (reproducible).
+tanpa beban merge pohon kernel ~2 GB. Sejak v2 keempat clone bisa **di-pin** per-run
+(input `kernel_ref` / `ksu_ref` / `scripts_ref` / `ak3_ref`) untuk build reproducible
+atau rollback ke HEAD yang terbukti hijau.
 
 ## 3. Stack patch 9001–9005
 
 | # | Target | Makna |
 |---|---|---|
 | `9001` | kABI `sysvipc` slot 6–8 (GKI <6.12) | Menjaga layout struct IPC sesuai ekspektasi modul vendor (pengganti `9001b` slot 1–3 sengaja tidak dipakai — pasti gagal di tree ini) |
-| `9002` | `raviole_defconfig` | Namespace/IPC + fitur gaya DroidSpaces (`UTS_NS … TMPFS_POSIX_ACL`) — quality gate menegakkan 13 config `=y` |
+| `9002` | `raviole_defconfig` | Baseline namespace/IPC + fitur DroidSpaces. Sejak v2, requirement **dinamis** diambil dari `configs/droidspaces.requirements` (hasil sinkronisasi dokumen resmi DroidSpaces, 19 simbol) dan di-merge saat build — quality gate menegakkan semuanya `=y` |
 | `9003` | Exempt daemon `droidspacesd` dari SUSFS | Daemon DroidSpaces melihat mount tree asli; root-hiding app lain tetap normal |
 | `9004` | `CONFIG_LOCALVERSION` | `-86hm` → `-Avenia` (identitas kernel) |
 | `9005` | `KernelSU/kernel/core/init.c` | Banner dmesg Avenia (string `pr_info`; `KSU_VERSION` & `KSU_PACKAGE_NAME` dijaga) |
@@ -84,18 +90,56 @@ developer kernel aktif atau butuh HEAD terkunci (reproducible).
 
 1. **Bebaskan disk** — buang SDK/.NET/CodeQL preinstalled (~+25 GB bebas).
 2. **Dependencies host** — `bc bison build-essential cpio dwarves flex kmod libssl-dev libncurses-dev rsync wget zip`.
-3. **Clone segar** — tree staging + build.sh + fork + AK3 (lihat §2).
-4. **Terapkan patch DroidSpaces** — urut leksikografis `9001→9005` (`patch -p1 --forward`).
-5. **Pre-clone AK3 + branding Avenia** — build.sh menghormati AK3 yang sudah ada; sed `kernel.string`.
-6. **Build** — `CLANG_SOURCE=aosp IS_RELEASE=1 KSU=1 ZIPNAME=Avenia bash ../scripts/raviole/build.sh`
-   → profil release (LTO + CFI/SCS aktif) → zip jatuh di `kernel/AnyKernel3/Avenia-gs101-ksu-release.zip`.
-7. **Quality gate** — 13 config DroidSpaces wajib `=y`; `CFS_BANDWIDTH`/`CGROUP_PIDS` wajib tetap off.
-8. **Upload artifact** — zip (retensi 14 hari) + `build-log-failed` (3 hari, hanya bila merah).
-9. **Rilis otomatis** — per build sukses: tag `avenia-gs101-r<N>` di halaman **Releases**
-   berisi zip + `checksums.txt` + catatan (kredit upstream, metadata build).
-10. **Upload log gagal** — hanya saat build merah, untuk diagnostik.
+3. **Clone segar (opsional di-pin)** — tree staging + build.sh + fork + AK3 (§2). Token checkout
+   tidak disimpan (job build hanya `contents: read`).
+4. **Terapkan patch Avenia** — urut leksikografis `9001→9005` (`patch -p1 --forward`).
+5. **Terapkan requirement DroidSpaces** — `configs/droidspaces.requirements` di-merge ke
+   `raviole_defconfig` (append/ubah `# CONFIG_X is not set` → `=y`). Simbol
+   `CFS_BANDWIDTH`/`CGROUP_PIDS` ditolak keras (merusak kABI vendor).
+6. **Branding + guard AK3** — sed `kernel.string=Avenia Kernel by aryarifki`, lalu assert:
+   device-check `oriole`/`raven`/`bluejay`, `do.devicecheck=1`, `do.modules=0`, `flash_generic dtbo`.
+   Salah satu hilang dari AK3 upstream → build gagal (bukan flash diam-diam berbahaya).
+7. **Build** — `CLANG_SOURCE=aosp IS_RELEASE=1 KSU=1 ZIPNAME=Avenia bash ../scripts/raviole/build.sh`
+   → profil release (LTO + CFI/SCS aktif) → zip di `kernel/AnyKernel3/Avenia-gs101-ksu-release.zip`.
+8. **Quality gate** — **semua** simbol requirement wajib `=y` di `out/.config`;
+   `CFS_BANDWIDTH`/`CGROUP_PIDS` wajib off.
+9. **Paket + metadata** — zip, `checksums.txt`, `meta.json` (SHA & tanggal upstream,
+   versi SUSFS/KernelSU, clang, hash tiap patch, state DroidSpaces).
+10. **Upload artifact** — retensi 14 hari; `build-log-failed` 3 hari hanya bila merah.
+11. **Job rilis (terpisah, satu-satunya pemegang `contents: write`)** — susun changelog lengkap,
+    cek duplikat sha256 terhadap rilis terakhir, buat tag `avenia-gs101-r<N>` + zip + checksums.
+12. **Update `CHANGELOG.md` + `.upstream-state.json`** — commit oleh `github-actions[bot]`
+    (`[skip ci]`), sehingga riwayat changelog menumpuk di repo, bukan hanya di halaman Releases.
 
-Trigger: push pada `patches/**` • manual *Run workflow* • cron mingguan `0 3 * * 1` (Senin 03:00 UTC).
+Trigger: push `patches/**` atau `configs/**` • manual *Run workflow* (bisa pin ref + `force_release=1`)
+• cron mingguan `0 3 * * 1` (Senin 03:00 UTC) • dispatch dari workflow `sync-droidspaces`.
+
+### 4.1 Sinkronisasi DroidSpaces otomatis (workflow `sync-droidspaces`)
+
+DroidSpaces **bukan** pohon kernel yang di-clone — ia app/CLI userspace. Yang dibutuhkan kernel
+adalah (a) opsi config dan (b) patch kABI SYSVIPC. Keduanya dipublikasikan di
+`ravindu644/droidspaces-oss`. Workflow harian (02:00 UTC) melakukan:
+
+1. Clone `droidspaces-oss` @ HEAD.
+2. Ekstrak daftar `CONFIG_*=y` dari section **GKI** di `Documentation/Kernel-Configuration.md`
+   (anchor ke heading `## GKI kernels`, agar tidak tertukar dengan daftar non-GKI).
+3. Tulis `configs/droidspaces.requirements` + `configs/droidspaces.source` (SHA upstream,
+   hash dokumen, hash patch kABI, jumlah simbol).
+4. Jika daftar berubah → commit + `gh workflow run build-kernel.yml` (build & rilis otomatis).
+5. Jika **patch kABI upstream berubah** → buka **Issue** (tidak menimpa otomatis), karena
+   `patches/9001` di repo ini diadaptasi ke slot padding **6–8** (slot 1–3 sudah terpakai di
+   tree `guacamole_sickness`). Menimpanya buta bisa menggeser offset struct vendor → bootloop.
+
+Artinya: pembaruan DroidSpaces terdeteksi maksimal 24 jam, dan build baru berjalan hanya bila
+requirement benar-benar berubah (bukan rebuild harian yang membuang menit runner).
+
+### 4.2 Changelog lengkap & anti-rilis-duplikat
+
+Setiap rilis memuat: tabel perubahan SHA upstream (kernel/fork/scripts/AK3) + **judul commit**
+dari GitHub Compare API, daftar commit repo sejak tag sebelumnya, identitas kernel
+(`uname -r`, SUSFS, KernelSU, clang), patch stack + sha256, state DroidSpaces, langkah
+verifikasi, dan checksum. Zip yang **byte-identik** dengan rilis terakhir tidak membuat rilis
+baru (artifact tetap dipertahankan); override dengan `force_release=1`.
 
 ## 5. Verifikasi binary-first SEBELUM flash (disiplin wajib)
 

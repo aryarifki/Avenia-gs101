@@ -1,0 +1,103 @@
+name: sync-droidspaces
+
+# Menjaga kernel tetap sesuai requirement DroidSpaces terbaru.
+#  - Harian 02:00 UTC: clone ravindu644/droidspaces-oss @ HEAD
+#  - Ekstrak daftar CONFIG_* (GKI) dari Documentation/Kernel-Configuration.md
+#  - Jika daftar berubah → commit configs/ + dispatch build baru (rilis otomatis)
+#  - Jika patch kABI upstream berubah → buka Issue untuk review manual
+#    (patches/9001 kita sengaja diadaptasi ke slot padding 6–8 tree guacamole)
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+concurrency:
+  group: sync-droidspaces
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sinkron requirement + patch DroidSpaces
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo CI
+        uses: actions/checkout@v4
+
+      - name: Clone DroidSpaces OSS (HEAD)
+        run: git clone --depth 1 https://github.com/ravindu644/droidspaces-oss upstream-ds
+
+      - name: Ekstrak requirement GKI + hash patch kABI
+        id: sync
+        run: python3 .github/scripts/droidspaces_sync.py
+
+      - name: Commit requirement baru + dispatch build
+        if: steps.sync.outputs.requirements_changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add configs/droidspaces.requirements configs/droidspaces.source
+          git commit -m "sync(droidspaces): requirement GKI dari upstream ${{ steps.sync.outputs.upstream_sha }}"
+          git push
+          echo "requirement berubah → dispatch build"
+          gh workflow run build-kernel.yml --ref main
+          {
+            echo "### Sinkronisasi DroidSpaces"
+            echo "- upstream: \`${{ steps.sync.outputs.upstream_sha }}\`"
+            echo "- requirement: ${{ steps.sync.outputs.requirements_count }} simbol"
+            echo "- aksi: commit + dispatch build"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Buka Issue bila patch kABI upstream berubah
+        if: steps.sync.outputs.patch_changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TITLE="DroidSpaces kABI patch upstream berubah — review patches/9001"
+          EXIST=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXIST" ]; then
+            echo "Issue sudah ada: #$EXIST"
+            exit 0
+          fi
+          cat > issue-body.md <<EOF
+          Patch kABI SYSVIPC milik DroidSpaces berubah di upstream.
+
+          - upstream: \`${{ steps.sync.outputs.upstream_sha }}\`
+          - file: \`Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch\`
+          - hash baru tercatat di \`configs/droidspaces.source\`
+
+          **Kenapa tidak otomatis?** \`patches/9001\` di repo ini bukan salinan mentah:
+          slot \`ANDROID_KABI_USE(1..3)\` di tree \`guacamole_sickness\` sudah terpakai, jadi
+          patch diadaptasi memakai slot 6–8. Menimpanya otomatis bisa menggeser offset
+          struct vendor dan membuat perangkat bootloop.
+
+          **Yang perlu dilakukan:**
+          1. Bandingkan patch upstream baru dengan \`patches/9001\`.
+          2. Sesuaikan nomor slot padding bila tree staging berubah.
+          3. Uji: \`git apply --check patches/9001*.patch\` pada clone staging.
+          4. Push perubahan → CI build + rilis otomatis.
+
+          Tutup issue ini setelah patch lokal diperbarui.
+          EOF
+          gh issue create --title "$TITLE" --body-file issue-body.md
+
+      - name: Ringkasan
+        if: always()
+        run: |
+          {
+            echo "### Hasil sinkronisasi"
+            echo "- requirement berubah: \`${{ steps.sync.outputs.requirements_changed }}\`"
+            echo "- patch kABI berubah: \`${{ steps.sync.outputs.patch_changed }}\`"
+            echo "- upstream SHA: \`${{ steps.sync.outputs.upstream_sha }}\`"
+            echo "- jumlah requirement: \`${{ steps.sync.outputs.requirements_count }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
