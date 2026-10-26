@@ -18,15 +18,28 @@ scripts + AnyKernel3 milik Reinazhard, clang prebuilt AOSP. Identitas hasil buil
 
 ```
 github-ci/
-├── .github/workflows/build-kernel.yml   ← workflow CI (sudah final)
+├── .github/
+│   ├── workflows/build-kernel.yml         ← build + quality gate + job rilis terpisah
+│   ├── workflows/sync-droidspaces.yml     ← sinkron requirement DroidSpaces (harian 02:00 UTC)
+│   └── scripts/
+│       ├── release_notes.py               ← generator changelog + deteksi rilis duplikat
+│       └── droidspaces_sync.py            ← ekstraktor requirement GKI + hash patch kABI
+├── configs/
+│   ├── droidspaces.requirements           ← 19 simbol GKI (auto-generated)
+│   └── droidspaces.source                 ← pin SHA upstream + hash dokumen & patch kABI
 ├── patches/
 │   ├── 9001-GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch   (kABI slot 6–8)
 │   ├── 9002-DroidSpaces-raviole_defconfig.patch           (config namespace+IPC)
-│   ├── 9003-exempt-droidspacesd-susfs.patch               (opsional: toggle susfs)
+│   ├── 9003-exempt-droidspacesd-susfs.patch               (exemption domain droidspacesd)
 │   ├── 9004-avenia-rebrand.patch                          (rebrand: LOCALVERSION "-Avenia")
 │   ├── 9005-avenia-ksu-brand.patch                        (branding dalam: banner dmesg boot Avenia)
-└── README-CI.md                          ← file ini
+├── CHANGELOG.md                           ← dibuat otomatis oleh job rilis (jangan edit manual)
+├── DOKUMENTASI.md                         ← panduan lengkap + matriks fitur
+└── README-CI.md                           ← file ini
 ```
+
+Setelah repo aktif, CI juga menulis dua file status: `CHANGELOG.md` dan `.upstream-state.json`
+(keduanya di-commit oleh `github-actions[bot]` dengan `[skip ci]`).
 
 Catatan: `9001b` (fallback slot 1–3) sengaja TIDAK disertakan — itu hanya untuk
 tree GKI standar, di tree staging ini dijamin gagal apply.
@@ -38,11 +51,14 @@ tree GKI standar, di tree staging ini dijamin gagal apply.
    Actions gratis; private untuk repo publik kernel tetap dapat 2.000 menit/bulan).
 2. **Upload isi folder ini** ke repo tersebut, jaga struktur foldernya:
    - Via web: add file → *Upload files* → drag folder yang berisi
-     `.github/`, `patches/`, `README-CI.md`.
+     `.github/`, `configs/`, `patches/`, `DOKUMENTASI.md`, `README-CI.md`.
      > GitHub web tidak mengizinkan drag folder `.github` (diawali titik) —
      > solusi: upload lewat *Add file → Create new file*, ketik path
-     > `.github/workflows/build-kernel.yml`, lalu paste isinya.
+     > `.github/workflows/build-kernel.yml`, lalu paste isinya. Lakukan hal yang
+     > sama untuk `sync-droidspaces.yml` dan kedua skrip di `.github/scripts/`.
    - Atau via git biasa: `git init; git add .; git commit; git push`.
+   - **Wajib**: folder `configs/` harus ikut ter-upload. Tanpanya job build berhenti
+     di gate requirement (`configs/droidspaces.requirements tidak ada`).
 3. Buka tab **Actions** → pilih *build-avenia-gs101-droidspaces* → enable jika diminta
    → klik **Run workflow** → Run.
 4. Tunggu ±1,5–4 jam (LTO+CFI di runner 4-core; build pertama paling lama).
@@ -104,3 +120,21 @@ Mungkin, dengan syarat keras:
   push → CI rebuild otomatis.
 - Jika `Check Requirements` di app DroidSpaces masih menolak → kirim log
   `build.log` + `out/.config` (artifact) untuk kami diagnosa.
+
+## 7. Batasan yang diketahui (dan kenapa)
+
+**Tidak ada fitur kernel upstream yang dibuang.** Diff `raviole_defconfig` stok vs Avenia = 0 baris dihapus
+(hanya `LOCALVERSION` yang diganti dan `UTS_NS`/`PID_NS` dinaikkan dari `not set` → `=y`).
+Yang tidak tersedia hanyalah tiga **limit**, dan itu batas GKI + defconfig Pixel 6 — bukan akibat patch Avenia:
+
+| Fitur DroidSpaces | Simbol | Status | Sebab |
+|---|---|---|---|
+| `--cpus` (batas CPU) | `CONFIG_CFS_BANDWIDTH` | tidak tersedia | menggeser ±4.000 CRC simbol ekspor → modul vendor prebuilt gagal load → bootloop |
+| `--pids-limit` | `CONFIG_CGROUP_PIDS` | tidak tersedia | idem (struct cgroup) |
+| limit memori / `memory.current` | `CONFIG_MEMCG` + `MEMCG_SWAP` | tidak tersedia | memang tidak ada di `raviole_defconfig` stok (walau `gki_defconfig` punya `MEMCG=y`) |
+
+Namespace, IPC, devtmpfs, NAT/NAT66, UFW, fail2ban, dan overlay/tmpfs xattr **semua aktif**.
+Rincian bukti + cara verifikasi: `DOKUMENTASI.md` §3.1–§3.3.
+
+Konflik SUSFS: dokumen DroidSpaces menyebut "hide sus mounts for all processes" membuat container gagal boot.
+Avenia mengatasinya lewat patch `9003` (exemption domain `u:r:droidspacesd:s0`); toggle tetap disarankan **OFF**.
