@@ -1,7 +1,7 @@
 {
-  "run": 13,
-  "repo_sha": "8045ece954f5b88cbe806e4b25f39bbcc7ccaac3",
-  "event": "push",
+  "run": 15,
+  "repo_sha": "322ce05acdd746bce87224824e821c49d9ed294c",
+  "event": "workflow_dispatch",
   "components": {
     "kernel": {
       "sha": "5edebf2b5afb2d9e687eedf81e5eba1ddf4e4428",
@@ -52,13 +52,13 @@
   ],
   "droidspaces": {
     "UPSTREAM_REPO": "ravindu644/droidspaces-oss",
-    "UPSTREAM_SHA": "d0b3a2e1fac8d238f78119879811119be35d32f4",
-    "UPSTREAM_DATE": "2026-10-26",
+    "UPSTREAM_SHA": "4344dc5fc4ab981f1cf2df54c93bf32a6ebbdc85",
+    "UPSTREAM_DATE": "2026-10-27",
     "DOC_SHA256": "6d2d9aca68193b4218930e719d7ff81a6d3a998bbec2fb98c01587b201b4180e",
     "KABI_PATCH": "Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch",
     "KABI_PATCH_SHA256": "47fc945b2d73d9737d56c0f1c3a74cda0a95c30f9dc1b1abe546fa48940c4460",
     "REQUIREMENTS_COUNT": "20",
     "REQUIREMENTS_FILE": "configs/droidspaces.requirements",
-    "SYNCED_AT": "2026-10-26T17:21:37Z"
+    "SYNCED_AT": "2026-10-28T08:02:10Z"
   }
 }
