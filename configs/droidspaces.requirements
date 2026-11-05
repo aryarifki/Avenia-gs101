@@ -1,5 +1,5 @@
 # DroidSpaces — requirement defconfig untuk Avenia (GKI 6.1 / android14-6.1)
-# Sumber: ravindu644/droidspaces-oss @ b01a81197f57 (2026-11-03)
+# Sumber: ravindu644/droidspaces-oss @ 6659b5b5f96d (2026-11-04)
 # Dokumen: Documentation/Kernel-Configuration.md → 'GKI kernels' → Step 2
 #
 # DIGENERATE OTOMATIS oleh .github/workflows/sync-droidspaces.yml.

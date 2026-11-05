@@ -1,10 +1,10 @@
 # Pin sumber DroidSpaces — digenerate otomatis, jangan edit manual.
 UPSTREAM_REPO=ravindu644/droidspaces-oss
-UPSTREAM_SHA=b01a81197f57115da465af6ef196f65a2bd10c27
-UPSTREAM_DATE=2026-11-03
+UPSTREAM_SHA=6659b5b5f96d7d8dcd86033b5a42a3fcc364bbf9
+UPSTREAM_DATE=2026-11-04
 DOC_SHA256=7676fe67f57f9c124608dbfd8aa51fe1ac8a6788523fcb609f074f86fbd029df
 KABI_PATCH=Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch
 KABI_PATCH_SHA256=47fc945b2d73d9737d56c0f1c3a74cda0a95c30f9dc1b1abe546fa48940c4460
 REQUIREMENTS_COUNT=20
 REQUIREMENTS_FILE=configs/droidspaces.requirements
-SYNCED_AT=2026-11-04T08:46:48Z
+SYNCED_AT=2026-11-05T09:09:07Z
