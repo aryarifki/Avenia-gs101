@@ -1,12 +1,12 @@
 {
-  "run": 23,
-  "repo_sha": "059049390fdf02efdae58421c94808af3d97e020",
-  "event": "workflow_dispatch",
+  "run": 24,
+  "repo_sha": "daa655f697aa500bba3c050f45b15da03a273ab8",
+  "event": "schedule",
   "components": {
     "kernel": {
-      "sha": "5edebf2b5afb2d9e687eedf81e5eba1ddf4e4428",
-      "date": "2026-10-21",
-      "subject": "Release: 6"
+      "sha": "5c88ae893f8b94428a14ff1c56ba988930bb2dd0",
+      "date": "2026-11-09",
+      "subject": "test"
     },
     "ksu": {
       "sha": "3f68e8785fb3400471292c817a29682b4ae99961",

@@ -2,6 +2,22 @@
 
 Digenerate otomatis oleh CI. Setiap entri = satu rilis GitHub.
 
+## r24 — 2026-11-09
+
+Build `daa655f697aa` · event `schedule` · `Avenia-gs101-ksu-release.zip`
+
+| Komponen | Sebelumnya | Sekarang |
+|---|---|---|
+| Kernel tree (`guacamole_sickness`) | `5edebf2b` | `5c88ae89` |
+| Driver KernelSU (`KernelSU@fork`) | `3f68e878` | `3f68e878` |
+| Skrip build (`scripts`) | `e65f6401` | `e65f6401` |
+| Pembungkus flash (`AnyKernel3`) | `f6162979` | `f6162979` |
+
+- Tidak ada perubahan pada repo CI sejak rilis sebelumnya.
+
+```
+19482086efa62450afc8f84bfcdd1542bd413e40afc1fe9770b37040d4137bae  Avenia-gs101-ksu-release.zip
+```
 ## r23 — 2026-11-08
 
 Build `059049390fdf` · event `workflow_dispatch` · `Avenia-gs101-ksu-release.zip`
